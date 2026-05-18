@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using UnityEngine;
 
 [RequireComponent(typeof(Agent))]
@@ -24,8 +25,8 @@ public class AgentBrain : MonoBehaviour
 
     [Header("Combat & Shooting Settings")]
     public Transform shootPoint;          // 槍口或胸前發射點的位置
-    public float aimingTime = 2.0f;       // 總瞄準時間
-    public float lockTime = 0.25f;        // 射擊前的鎖定時間 (給玩家的閃避空檔)
+    public float aimingTime = 5.0f;       // 總瞄準時間
+    public float lockTime = 3.0f;        // 射擊前的鎖定時間 (給玩家的閃避空檔)
     public float attackCooldown = 2.0f;   // 射擊後的冷卻時間
 
     private float combatTimer = 0f;
@@ -66,6 +67,9 @@ public class AgentBrain : MonoBehaviour
                 break;
             case AgentDecision.INVESTIGATE:
                 HandleInvestigate();
+                break;
+            case AgentDecision.ATTACK:
+                HandleAttack();
                 break;
         }
 
@@ -130,7 +134,7 @@ public class AgentBrain : MonoBehaviour
         currentDecision = AgentDecision.ATTACK;
         agent.targetObject = target;
         combatPhase = 0;
-        combatTimer = 0f;
+        combatTimer = 2f;
         
         agent.navigator.ResetNavigation(); // 戰鬥時停止尋路移動
     }
@@ -152,6 +156,7 @@ public class AgentBrain : MonoBehaviour
                 // --- 視覺提示：畫出雷射線 (不會有物理碰撞) ---
                 if (aimLaser != null)
                 {
+                    // UnityEngine.Debug.Log("Aiming laser activated.");
                     aimLaser.enabled = true;
                     aimLaser.SetPosition(0, shootPoint.position);
                     aimLaser.SetPosition(1, agent.targetObject.position + Vector3.up * 1f); // 瞄準胸口
@@ -163,6 +168,7 @@ public class AgentBrain : MonoBehaviour
                 if (combatTimer >= (aimingTime - lockTime))
                 {
                     combatPhase = 1;
+                    UnityEngine.Debug.Log("Entering lock phase 1. Player has a brief window to dodge!");
                     
                     // 記錄當下目標的方向，這就是等一下實體子彈要飛出去的絕對方向！
                     Vector3 targetPos = agent.targetObject.position + Vector3.up * 1f;
@@ -184,8 +190,10 @@ public class AgentBrain : MonoBehaviour
 
                 if (combatTimer >= aimingTime)
                 {
+                    UnityEngine.Debug.Log("Lock phase complete. Firing bullet!");
                     combatPhase = 2; // 時間到，準備擊發
                 }
+                UnityEngine.Debug.Log($"Locking... Time: {combatTimer:F2}s, LockedDirection: {lockedDirection}");
                 break;
 
             case 2: // Phase 2: 擊發階段 (Shooting)
@@ -195,6 +203,7 @@ public class AgentBrain : MonoBehaviour
                 
                 combatTimer = 0f;
                 combatPhase = 3; // 進入冷卻
+                UnityEngine.Debug.Log("Bullet fired! Entering cooldown.");
                 break;
 
             case 3: // Phase 3: 冷卻階段 (Cooldown)
@@ -209,6 +218,7 @@ public class AgentBrain : MonoBehaviour
                     combatPhase = 0; 
                     combatTimer = 0f;
                 }
+                UnityEngine.Debug.Log($"Cooling down... Time: {combatTimer:F2}s");
                 break;
         }
     }

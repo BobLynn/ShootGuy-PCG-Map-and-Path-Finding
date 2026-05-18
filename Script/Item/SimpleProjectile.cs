@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using UnityEngine;
 
 [RequireComponent(typeof(SphereCollider))]
@@ -46,6 +47,7 @@ public class SimpleProjectile : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        UnityEngine.Debug.Log($"子彈碰到了 {other.gameObject.name} (Layer: {LayerMask.LayerToName(other.gameObject.layer)})");
         if (other.gameObject.layer == LayerMask.NameToLayer("Obstacle"))
         {
             DisableAndReturn(); // 撞牆，回收

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 
 public class BulletPool : MonoBehaviour
@@ -57,6 +58,8 @@ public class BulletPool : MonoBehaviour
         bullet.transform.position = position;
         bullet.transform.rotation = rotation;
         bullet.SetActive(true);
+
+        UnityEngine.Debug.Log($"BulletPool: 提供了一顆子彈，目前池子裡還有 {pool.Count} 顆");
 
         return bullet;
     }

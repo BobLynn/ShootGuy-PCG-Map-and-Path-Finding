@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 
 [RequireComponent(typeof(Agent))] // 確保跟你的 Agent 綁定在一起
@@ -46,7 +47,7 @@ public class SensorySystem : MonoBehaviour
 
         if (distanceToSound <= stimulus.radius)
         {
-            Debug.Log($"{gameObject.name} 聽到了 {stimulus.type}!");
+            UnityEngine.Debug.Log($"{gameObject.name} 聽到了 {stimulus.type}!");
 
             targetInvestigatePos = stimulus.position;
             hasSuspiciousStimulus = true;
@@ -82,6 +83,7 @@ public class SensorySystem : MonoBehaviour
             // 2. 檢查角度：目標是否在我的視野錐體內？
             if (Vector3.Angle(transform.forward, dirToTarget) < viewAngle / 2)
             {
+                // UnityEngine.Debug.Log($"{gameObject.name} 發現了 {target.name} 在視野範圍內!");
                 float dstToTarget = Vector3.Distance(transform.position, target.position);
 
                 // 3. 檢查視線阻擋 (Line of Sight)：我跟玩家之間有沒有牆壁？
@@ -95,7 +97,12 @@ public class SensorySystem : MonoBehaviour
                     canSeePlayer = true;
                     lastKnownPlayerPos = target.position;
                     
-                    agent.brain.StartAttack(target); // 直接告訴 Brain 開始攻擊流程
+                    
+                    if (agent.brain.currentDecision != AgentDecision.ATTACK)
+                    {
+                        UnityEngine.Debug.Log($"{gameObject.name} 看到了玩家！");
+                        agent.brain.StartAttack(target); // 直接告訴 Brain 開始攻擊流程
+                    }
                 }
             }
         }
@@ -113,16 +120,16 @@ public class SensorySystem : MonoBehaviour
         // 畫出視線錐體的兩條邊界線
         Vector3 viewAngle01 = DirFromAngle(transform.eulerAngles.y, -viewAngle / 2);
         Vector3 viewAngle02 = DirFromAngle(transform.eulerAngles.y, viewAngle / 2);
-
+        UnityEngine.Vector3 eyePos = transform.position + Vector3.up * 1.5f; // 眼高位置
         Gizmos.color = Color.yellow;
-        Gizmos.DrawLine(transform.position, transform.position + viewAngle01 * viewRadius);
-        Gizmos.DrawLine(transform.position, transform.position + viewAngle02 * viewRadius);
+        Gizmos.DrawLine(eyePos, eyePos + viewAngle01 * viewRadius);
+        Gizmos.DrawLine(eyePos, eyePos + viewAngle02 * viewRadius);
 
         // 如果看到玩家，把視野線畫成紅色
         if (canSeePlayer)
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawLine(transform.position, lastKnownPlayerPos);
+            Gizmos.DrawLine(eyePos, lastKnownPlayerPos);
         }
     }
 
