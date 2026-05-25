@@ -6,7 +6,7 @@ using UnityEngine;
 public class SensorySystem : MonoBehaviour
 {
     [Header("Vision Settings")]
-    public float viewRadius = 15f;           // 視野距離
+    public float viewRadius = 20f;           // 視野距離
     [Range(0, 360)] public float viewAngle = 90f; // 視野角度 (錐體)
     public LayerMask targetMask;             // 誰是目標？(例如 Player Layer)
     public LayerMask obstacleMask;           // 什麼會擋住視線？(牆壁、障礙物)
@@ -16,8 +16,8 @@ public class SensorySystem : MonoBehaviour
     public Vector3 lastKnownPlayerPos;
     
     [Header("Memory / Brain Interface")]
-    public Vector3 targetInvestigatePos;     // 聽到聲音後要去調查的地點
-    public bool hasSuspiciousStimulus = false;
+    // public Vector3 targetInvestigatePos;     // 聽到聲音後要去調查的地點
+    // public bool hasSuspiciousStimulus = false;
 
     private Agent agent;
 
@@ -49,11 +49,14 @@ public class SensorySystem : MonoBehaviour
         {
             UnityEngine.Debug.Log($"{gameObject.name} 聽到了 {stimulus.type}!");
 
-            targetInvestigatePos = stimulus.position;
-            hasSuspiciousStimulus = true;
+            // targetInvestigatePos = stimulus.position;
+            // hasSuspiciousStimulus = true;
 
             // 呼叫 Brain 正式進入 Investigate 流程
-            agent.brain.StartInvestigation(stimulus.position);
+            if (!canSeePlayer) // 如果当前没有看到玩家，才去调查声音来源
+            {
+                agent.brain.StartInvestigation(stimulus.position);
+            }
         }
     }
 
@@ -68,7 +71,7 @@ public class SensorySystem : MonoBehaviour
 
     private void FieldOfViewCheck()
     {
-        canSeePlayer = false;
+        bool canSeePlayer = false;
 
         // 1. 先用球體重疊 (OverlapSphere) 找出範圍內所有的 Target (例如玩家)
         Collider[] targetsInViewRadius = Physics.OverlapSphere(transform.position, viewRadius, targetMask);
@@ -94,17 +97,19 @@ public class SensorySystem : MonoBehaviour
                 if (!Physics.Linecast(eyePos, targetCenter, obstacleMask))
                 {
                     // 看到玩家了！
-                    canSeePlayer = true;
                     lastKnownPlayerPos = target.position;
-                    
-                    
-                    if (agent.brain.currentDecision != AgentDecision.ATTACK)
-                    {
-                        UnityEngine.Debug.Log($"{gameObject.name} 看到了玩家！");
-                        agent.brain.StartAttack(target); // 直接告訴 Brain 開始攻擊流程
-                    }
+                    canSeePlayer = true;
+
+                    agent.brain.OnPlayerSpotted(target, dstToTarget);
+                    break;
                 }
             }
+        }
+        if (!canSeePlayer && agent.brain.currentDecision == AgentDecision.ATTACK)
+        {
+            canSeePlayer = false;
+            UnityEngine.Debug.Log($"{gameObject.name} 失去了玩家的視線...");
+            agent.brain.OnPlayerLost(lastKnownPlayerPos);
         }
     }
 
@@ -129,7 +134,7 @@ public class SensorySystem : MonoBehaviour
         if (canSeePlayer)
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawLine(eyePos, lastKnownPlayerPos);
+            Gizmos.DrawLine(eyePos, lastKnownPlayerPos + Vector3.up * 1.0f); // 畫到玩家中心位置
         }
     }
 

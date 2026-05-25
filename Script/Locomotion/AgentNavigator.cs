@@ -77,7 +77,7 @@ public class AgentNavigator : MonoBehaviour
         // 1. 如果大腦下令「發呆/等待」，強制煞車，不計算尋路
         if (agent.isWaiting)
         {
-            UnityEngine.Debug.Log("Waiting... slowing down... " + agent.brain.waitTimer);
+            // UnityEngine.Debug.Log("Waiting... slowing down... " + agent.brain.waitTimer);
             agent.steeringForce = Vector3.Lerp(agent.velocity, Vector3.zero, dt * 10f) - agent.velocity;
             return;
         }

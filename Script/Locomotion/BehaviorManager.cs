@@ -2,7 +2,6 @@ using UnityEngine;
 
 // 定義管理員種類與狀態
 public enum ManagerType { Arbitration, ArbitrationWithBlending, WeightDriven }
-// public enum AgentState { PATROL, CHASE, ARRIVE, SEEK} 
 
 public abstract class BaseBehaviorManager
 {
@@ -53,7 +52,7 @@ public abstract class BaseBehaviorManager
         }
 
         // 使用當前多重狀態計算目標導向力
-        if (agent.HasState(AgentState.CHASE))
+        if (agent.HasState(AgentState.PURSUE))
         {
             goalSteering = Behaviors.Pursue(agent.transform.position, targetPos, targetVelocity, agent.velocity, agent.maxSpeed);
         }
@@ -64,6 +63,10 @@ public abstract class BaseBehaviorManager
         if (agent.HasState(AgentState.ARRIVE))
         {
             goalSteering = Behaviors.Arrive(agent.transform.position, targetPos, agent.velocity, agent.maxSpeed, agent.navigator.arriveTargetRadius, agent.navigator.arriveSlowRadius);
+        }
+        if (agent.HasState(AgentState.FLEE))
+        {
+            goalSteering += Behaviors.Flee(agent.transform.position, targetPos, agent.velocity, agent.maxSpeed);
         }
         
         return goalSteering;
@@ -147,6 +150,14 @@ public class WeightDrivenManager : BaseBehaviorManager
         float goalWeight = 1.0f;
         Vector3 goalSteering = ComputeGoalSteering(target, targetVelocity);
         steering += goalSteering * goalWeight;
+
+        // // 如果大腦同時開啟了 FLEE 狀態，疊加直接遠離玩家的驚慌加速力
+        // if (agent.HasState(AgentState.FLEE) && agent.threatObject != null)
+        // {
+        //     float fleeWeight = 1.5f; // 給予較高權重，產生背對玩家時的衝刺加速感
+        //     Vector3 fleeForce = Behaviors.Flee(agent.transform.position, agent.threatObject.position, agent.velocity, agent.maxSpeed);
+        //     steering += fleeForce * fleeWeight;
+        // }
 
         return Limit(steering, agent.maxForce);
     }
