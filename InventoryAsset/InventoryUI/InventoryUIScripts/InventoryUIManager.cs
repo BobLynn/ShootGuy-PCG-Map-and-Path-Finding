@@ -146,6 +146,9 @@ namespace InventorySystem
         [Tooltip("Makes test items for seeing how items will appear in the inventory. NOTE: these items will not persist once you press play.")]
         [SerializeField]
         List<TestItem> testItems;
+        [Header("========[ Starting Items Configuration ]========")]
+        [SerializeField] private ItemDatabase sharedItemDatabase;
+        [SerializeField] private List<StartItem> startingItems;
 
         [Space(10)]
         [Header("***Invokes actions when no valid slot is")]
@@ -198,7 +201,7 @@ namespace InventorySystem
         /// </summary>
         private void OnEnable()
         {
-            if(background!=null&&activeBackground)
+            if (background != null && activeBackground)
             {
                 background.SetActive(true);
 
@@ -253,6 +256,7 @@ namespace InventorySystem
             InitSlotEnterExitDict();
             BackgroundActivity();
             initializeTestItems();
+            initializeStartItems();
         }
 
         /// <summary>
@@ -538,7 +542,7 @@ namespace InventorySystem
         {
             if (Input.GetKey(KeyCode.LeftShift))
             {
-                MoveOnPressHelper(KeyCode.LeftShift,slot);
+                MoveOnPressHelper(KeyCode.LeftShift, slot);
 
             }
             else if (Input.GetKey(KeyCode.LeftControl))
@@ -666,6 +670,58 @@ namespace InventorySystem
                     else
                     {
                         Debug.LogWarning("Test Position does not exist");
+                    }
+                }
+            }
+        }
+        public void initializeStartItems()
+        {
+            if (startingItems == null || startingItems.Count == 0) return;
+
+            // --- 1. EDITOR MODE: Auto-fetch graphics from the standalone asset file ---
+            if (!Application.isPlaying)
+            {
+                if (sharedItemDatabase == null) return;
+
+                foreach (StartItem item in startingItems)
+                {
+                    if (string.IsNullOrEmpty(item.itemType)) continue;
+
+                    // Fetch the sprite smoothly from our persistent database file
+                    Sprite itemSprite = sharedItemDatabase.GetSpriteByTypeName(item.itemType);
+
+                    if (itemSprite != null && positionToSlotDict.ContainsKey(item.position))
+                    {
+                        Slot slot = positionToSlotDict[item.position].GetComponent<Slot>();
+                        slot.GetItemHolder().GetComponent<DragItem>().SetImage(itemSprite);
+                        slot.GetItemHolder().GetComponent<DragItem>().SetTextTestImage(item.amount);
+                        slot.SetImageOffSet(ItemImageOffset);
+                        slot.GetItemHolder().SetActive(true);
+                    }
+                }
+            }
+            // --- 2. PLAY MODE: Inject actual runtime engine data ---
+            else if (Application.isPlaying)
+            {
+                if (InventoryController.instance == null) return;
+
+                int currentItemCount = 0;
+                foreach (StartItem item in startingItems)
+                {
+                    if (!string.IsNullOrEmpty(item.itemType))
+                    {
+                        currentItemCount += InventoryController.instance.CountItems(inventoryName, item.itemType);
+                    }
+                }
+
+                if (currentItemCount == 0)
+                {
+                    foreach (StartItem item in startingItems)
+                    {
+                        if (!string.IsNullOrEmpty(item.itemType))
+                        {
+                            InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, item.amount);
+                        }
                     }
                 }
             }
@@ -804,6 +860,15 @@ namespace InventorySystem
             public int position;
         }
         [System.Serializable]
+        private struct StartItem
+        {
+            public string itemType;
+
+            public int amount;
+
+            public int position;
+        }
+        [System.Serializable]
         private struct ItemMoveOnPress
         {
             public MoveOptions moveButton;
@@ -830,7 +895,7 @@ namespace InventorySystem
 
         public bool InvokeMissOverSlot(InventoryItem item1, InventoryItem item2)
         {
-            if(invokeOnMiss.missOverSlotAction!=null && !(invokeOnMiss.missOverSlotAction.GetPersistentEventCount()==0))
+            if (invokeOnMiss.missOverSlotAction != null && !(invokeOnMiss.missOverSlotAction.GetPersistentEventCount() == 0))
             {
                 invokeOnMiss.missOverSlotAction.Invoke(item1, item2);
                 return true;

@@ -37,7 +37,7 @@ namespace InventorySystem
         [Header("NOTE: All changes to items must be made here")]
         [Tooltip("Add templates for each allowable inventory item.")]
         [SerializeField]
-        public List<ItemInitializer> items; // Accepted items to add to the inventory.
+        private ItemDatabase itemDatabase;
 
         [Space(10)] // Add some space.
 
@@ -217,10 +217,17 @@ namespace InventorySystem
         private void InitializeItems()
         {
             itemManager.Clear();
-            foreach (ItemInitializer item in items)
+
+            // Safety check in case you forgot to drag the database into the inspector
+            if (itemDatabase == null || itemDatabase.globalItems == null)
+            {
+                Debug.LogError("InventoryController: No ItemDatabase assigned!");
+                return;
+            }
+            foreach (ItemInitializer item in itemDatabase.globalItems)
             {
                 InventoryItem newItem = new InventoryItem(item);
-                if(!itemManager.ContainsKey(newItem.GetItemType()))
+                if (!itemManager.ContainsKey(newItem.GetItemType()))
                 {
                     itemManager.Add(item.GetItemType(), newItem);
                 }
@@ -293,7 +300,7 @@ namespace InventorySystem
             inventory.RemoveItemInPosition(position, amount);
 
         }
-        public void RemoveItem(string inventoryName,string itemType, int amount)
+        public void RemoveItem(string inventoryName, string itemType, int amount)
         {
             if (!(TestInventoryDict(inventoryName) && TestItemDict(itemType)))
             {
@@ -386,7 +393,13 @@ namespace InventorySystem
             inventoryManager.Clear();
             itemManager.Clear();
             prevInventoryTracker.Clear();
-            foreach (ItemInitializer item in items)
+            // Safety check in case you forgot to drag the database into the inspector
+            if (itemDatabase == null || itemDatabase.globalItems == null)
+            {
+                Debug.LogError("InventoryController: No ItemDatabase assigned!");
+                return;
+            }
+            foreach (ItemInitializer item in itemDatabase.globalItems)
             {
                 itemManager.Add(item.GetItemType(), new InventoryItem(item));
             }
@@ -603,7 +616,7 @@ namespace InventorySystem
         }
         private bool TestIunderstandTheSetup()
         {
-            if(!iUnderstandTheSetup)
+            if (!iUnderstandTheSetup)
             {
                 Debug.LogError("Read instructions and click The I understand The setup bool.");
                 return false;
@@ -759,7 +772,13 @@ namespace InventorySystem
 
         public List<ItemInitializer> GetItems()
         {
-            return items;
+            // Safety check in case you forgot to drag the database into the inspector
+            if (itemDatabase == null || itemDatabase.globalItems == null)
+            {
+                Debug.LogError("InventoryController: No ItemDatabase assigned!");
+                return null;
+            }
+            return itemDatabase.globalItems;
         }
 
         private void OnDestroy()

@@ -40,7 +40,7 @@ namespace InventorySystem
             {
                 FindController();
             }
-            items = controller.GetComponent<InventoryController>().items;
+            items = controller.GetComponent<InventoryController>().GetItems();
         }
         public void FindInventoryList()
         {
