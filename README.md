@@ -179,6 +179,6 @@ ProjectSettings/
 
 # Authors
 
-Tony
+Hins-Wei, Lin
 AI for Games
 NCKU Spring 2026
