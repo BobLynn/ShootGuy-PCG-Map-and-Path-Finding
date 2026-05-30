@@ -113,6 +113,12 @@ public class WaypointGraph3D : MonoBehaviour
             {
                 Vector3 hitPoint = hit.point;
                 bool isValidNode = true;
+                // 只有在walkableLayers上打到的點才有資格成為節點
+                if (((1 << hit.collider.gameObject.layer) & unwalkableLayers) != 0)
+                {
+                    isValidNode = false;
+                    continue; // 這個點不是可行走的表面，跳過
+                }
 
                 // 檢查該點上方是否有足夠的頭部空間，並排除自己踩著的物件
                 Vector3 checkCenter = hitPoint + Vector3.up * (agentHeight * 0.5f);
