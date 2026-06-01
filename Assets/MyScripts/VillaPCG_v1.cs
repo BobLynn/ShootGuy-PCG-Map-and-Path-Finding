@@ -1,8 +1,14 @@
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEditor.SceneManagement;
+#endif
+
 using System.Collections.Generic;
 using UnityEngine;
 
 public class VillaPCG_v1 : MonoBehaviour
 {
+    [Header("Seed")]
     public int seed = 12345;
     public bool randomizeSeedOnPlay = false;
 
@@ -11,6 +17,41 @@ public class VillaPCG_v1 : MonoBehaviour
     // public float obstacleMinExtraHeight = 0.3f;
     // public float obstacleMaxHeight = 4.0f;
 
+    [Header("Navigation Layers")]
+    public string walkableLayerName = "Walkable";
+    public string unwalkableLayerName = "Unwalkable";
+    public string waypointLayerName = "Default";
+
+    [Header("Navigation Rebuild")]
+
+    //WaypointGraph 設定
+    public WaypointGraph3D waypointGraph;
+    public bool rebuildWaypointGraphAfterGenerate = true;
+
+    //GridMap 設定
+    public GridMap3D gridMap;
+    public bool rebuildGridMapAfterGenerate = true;
+    public float gridMapPadding = 4.0f;
+
+    int GetLayerSafe(string layerName)
+    {
+        int layer = LayerMask.NameToLayer(layerName);
+        if (layer == -1)
+        {
+            Debug.LogWarning($"[VillaPCG] Layer '{layerName}' does not exist. Using Default layer.");
+            return 0;
+        }
+        return layer;
+    }
+
+    [Header("Generation Mode")]
+    public bool generateOnPlay = false;
+
+    [Header("Connection Blocking")]
+    public bool generateConnectionSideWalls = true;
+    public float connectionSideWallOverlap = 0.35f;
+
+    [Header("Obstacle Density")]
     [Tooltip("Public room obstacle density multiplier")]
     public float publicObstacleDensity = 0.35f;
 
@@ -42,11 +83,19 @@ public class VillaPCG_v1 : MonoBehaviour
     public Material restrictedFloorMat;
     public Material coverMat;
 
-        [Header("Layout Scale")]
+    [Header("Layout Scale")]
     public float layoutScale = 2.0f;          // 房間與地圖整體放大 2 倍
     public float connectorFloorWidth = 3.5f;  // 房間之間連接地板寬度
     public bool generateConnectorFloors = false;
     public bool generateSafetyFoundation = true;
+
+    void Start()
+    {
+        if (Application.isPlaying && generateOnPlay)
+        {
+            Generate();
+        }
+    }
 
     private List<Room> rooms = new List<Room>();
     private List<Connection> connections = new List<Connection>();
@@ -108,10 +157,10 @@ public class VillaPCG_v1 : MonoBehaviour
         }
     }
 
-    void Start()
-    {
-        Generate();
-    }
+    // void Start()
+    // {
+    //     Generate();
+    // }
 
     [ContextMenu("Generate Villa")]
     public void Generate()
@@ -128,22 +177,95 @@ public class VillaPCG_v1 : MonoBehaviour
         BuildRoomGraph();
         ValidateReachability();
 
+        // 視覺用大地板，可選，但不要讓 pathfinding 使用它
         CreateOnePieceFloor();
 
+        // 真正的 rooms / walls / obstacles
         BuildGeometry();
-        CreateConnectionCorridors();
 
+        // corridor walls
+        // CreateConnectionCorridors();
+
+        // corridor floors，建議打開，方便 navigation
         // if (generateConnectorFloors)
-        // CreateConnectorFloors();
+        //     CreateConnectorFloors();
+
+        // connection side walls
+        if (generateConnectionSideWalls)
+            CreateConnectionSideWalls();
 
         if (generateSafetyFoundation)
-        CreateSafetyFoundation();
+            CreateSafetyFoundation();
 
         GenerateWaypoints();
         CreatePlayerSpawn();
 
+        Physics.SyncTransforms();
+
+    #if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            EditorUtility.SetDirty(this);
+            EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        }
+    #endif
+
         Debug.Log("[VillaPCG] Runtime villa map generated.");
+
+        if (rebuildGridMapAfterGenerate && gridMap != null)
+        {
+            Physics.SyncTransforms();
+
+            Bounds mapBounds = GetGeneratedMapBounds(gridMapPadding);
+
+            gridMap.gridCenter = mapBounds.center;
+            gridMap.width = mapBounds.size.x;
+            gridMap.length = mapBounds.size.z;
+
+            gridMap.GenerateGrid();
+        }
+
+        if (rebuildGridMapAfterGenerate && gridMap != null)
+        {
+            Physics.SyncTransforms();
+
+            Bounds mapBounds = GetGeneratedMapBounds(gridMapPadding);
+
+            gridMap.gridCenter = mapBounds.center;
+            gridMap.width = mapBounds.size.x;
+            gridMap.length = mapBounds.size.z;
+
+            gridMap.GenerateGrid();
+        }
+
+        if (rebuildWaypointGraphAfterGenerate && waypointGraph != null)
+        {
+            Physics.SyncTransforms();
+            waypointGraph.GenerateGraph();
+        }
     }
+
+    [ContextMenu("Clear Generated Villa")]
+    public void ClearGeneratedVilla()
+    {
+        ClearOldMap();
+    }
+
+    [ContextMenu("Regenerate With New Seed")]
+    public void RegenerateWithNewSeed()
+    {
+        seed = Random.Range(0, 999999);
+        Generate();
+    }
+
+    // [ContextMenu("Generate Waypoint Graph")]
+    // public void GenerateGraph()
+    // {
+    //     nodes.Clear();
+    //     edges.Clear();
+
+    //     // 原本 GenerateGraph 內容
+    // }
 
     void ClearOldMap()
     {
@@ -340,8 +462,10 @@ public class VillaPCG_v1 : MonoBehaviour
     {
         foreach (Room r in rooms)
         {
-            // CreateFloor(r);
+            CreateFloor(r);
+
             CreateWalls(r);
+
             if (generateCoverObjects)
                 CreateRoomCover(r);
 
@@ -357,6 +481,8 @@ public class VillaPCG_v1 : MonoBehaviour
         floor.transform.parent = transform;
         floor.transform.position = new Vector3(r.center.x, -floorThickness * 0.5f, r.center.y);
         floor.transform.localScale = new Vector3(r.size.x, floorThickness, r.size.y);
+
+        floor.layer = GetLayerSafe(walkableLayerName);
 
         Renderer renderer = floor.GetComponent<Renderer>();
         renderer.material = IsRestricted(r) ? restrictedFloorMat : floorMat;
@@ -413,18 +539,25 @@ public class VillaPCG_v1 : MonoBehaviour
             CreateWallSegment(r, side, cursor, end, fixedCoord, horizontal);
     }
 
-        bool ShouldSkipWallSide(Room r, Side side)
+    //     bool ShouldSkipWallSide(Room r, Side side)
+    // {
+    //     foreach (Connection c in connections)
+    //     {
+    //         if (c.b != r || c.sideB != side)
+    //             continue;
+
+    //         // 只有真的共享同一條牆時，才跳過 B 的那面牆，避免雙層夾板。
+    //         if (AreRoomsTouching(c))
+    //             return true;
+    //     }
+
+    //     return false;
+    // }
+
+    bool ShouldSkipWallSide(Room r, Side side)
     {
-        foreach (Connection c in connections)
-        {
-            if (c.b != r || c.sideB != side)
-                continue;
-
-            // 只有真的共享同一條牆時，才跳過 B 的那面牆，避免雙層夾板。
-            if (AreRoomsTouching(c))
-                return true;
-        }
-
+        // v1 穩定版：每個房間都自己生成完整牆面。
+        // 不再跳過 connection.b 的牆，避免 Kitchen / Storage 這類房間缺牆。
         return false;
     }
 
@@ -472,6 +605,26 @@ public class VillaPCG_v1 : MonoBehaviour
         return false;
     }
 
+    // List<float> GetDoorOffsetsForRoomSide(Room r, Side side)
+    // {
+    //     List<float> offsets = new List<float>();
+
+    //     foreach (Connection c in connections)
+    //     {
+    //         if (c.a == r && c.sideA == side)
+    //         {
+    //             offsets.Add(GetLocalDoorOffset(r, side, c.doorWorldPos));
+    //         }
+    //         else if (c.b == r && c.sideB == side)
+    //         {
+    //             if (!ShouldSkipWallSide(r, side))
+    //                 offsets.Add(GetLocalDoorOffset(r, side, c.doorWorldPos));
+    //         }
+    //     }
+
+    //     return offsets;
+    // }
+
     List<float> GetDoorOffsetsForRoomSide(Room r, Side side)
     {
         List<float> offsets = new List<float>();
@@ -484,8 +637,7 @@ public class VillaPCG_v1 : MonoBehaviour
             }
             else if (c.b == r && c.sideB == side)
             {
-                if (!ShouldSkipWallSide(r, side))
-                    offsets.Add(GetLocalDoorOffset(r, side, c.doorWorldPos));
+                offsets.Add(GetLocalDoorOffset(r, side, c.doorWorldPos));
             }
         }
 
@@ -529,6 +681,9 @@ public class VillaPCG_v1 : MonoBehaviour
 
         GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         wall.name = "Wall_" + r.name + "_" + side;
+
+        wall.layer = GetLayerSafe(unwalkableLayerName);
+
         wall.transform.parent = transform;
         wall.transform.position = position;
         wall.transform.localScale = scale;
@@ -711,6 +866,9 @@ public class VillaPCG_v1 : MonoBehaviour
 
                 GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 floor.name = "ConnectorFloor_" + a.name + "_to_" + b.name;
+                
+                floor.layer = GetLayerSafe(walkableLayerName);
+
                 floor.transform.parent = root.transform;
                 floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f, centerZ);
                 floor.transform.localScale = new Vector3(length + 0.5f, floorThickness, connectorFloorWidth);
@@ -744,6 +902,9 @@ public class VillaPCG_v1 : MonoBehaviour
 
                 GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 floor.name = "ConnectorFloor_" + a.name + "_to_" + b.name;
+                
+                floor.layer = GetLayerSafe(walkableLayerName);
+                
                 floor.transform.parent = root.transform;
                 floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f, centerZ);
                 floor.transform.localScale = new Vector3(connectorFloorWidth, floorThickness, length + 0.5f);
@@ -943,6 +1104,9 @@ public class VillaPCG_v1 : MonoBehaviour
     {
         GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         wall.name = name;
+
+        wall.layer = GetLayerSafe(unwalkableLayerName);
+
         wall.transform.parent = root;
         wall.transform.position = position;
         wall.transform.localScale = scale;
@@ -963,6 +1127,9 @@ public class VillaPCG_v1 : MonoBehaviour
 
         GameObject obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
         obstacle.name = "Obstacle_" + r.name + "_" + index;
+
+        obstacle.layer = GetLayerSafe(unwalkableLayerName);
+
         obstacle.transform.parent = transform;
 
         float width;
@@ -994,5 +1161,174 @@ public class VillaPCG_v1 : MonoBehaviour
 
         Renderer renderer = obstacle.GetComponent<Renderer>();
         renderer.material = coverMat;
+    }
+
+    void CreateConnectionSideWalls()
+    {
+        GameObject root = new GameObject("Generated_ConnectionSideWalls");
+        root.transform.parent = transform;
+
+        foreach (Connection c in connections)
+        {
+            // 如果兩個房間本來就貼在一起，不需要額外封邊
+            if (AreRoomsTouching(c))
+                continue;
+
+            bool eastWestConnection = c.sideA == Side.East || c.sideA == Side.West;
+
+            if (eastWestConnection)
+                CreateEastWestConnectionSideWalls(c, root.transform);
+            else
+                CreateNorthSouthConnectionSideWalls(c, root.transform);
+        }
+    }
+
+    void CreateEastWestConnectionSideWalls(Connection c, Transform root)
+    {
+        Room a = c.a;
+        Room b = c.b;
+
+        float x1;
+        float x2;
+
+        if (a.center.x < b.center.x)
+        {
+            x1 = a.Right;
+            x2 = b.Left;
+        }
+        else
+        {
+            x1 = b.Right;
+            x2 = a.Left;
+        }
+
+        float gapLength = Mathf.Abs(x2 - x1);
+
+        if (gapLength < 0.1f)
+            return;
+
+        float centerX = (x1 + x2) * 0.5f;
+        float centerZ = c.doorWorldPos.z;
+
+        float length = gapLength + connectionSideWallOverlap * 2.0f;
+
+        float zOffset = doorWidth * 0.5f + wallThickness * 0.5f;
+
+        CreateConnectionWall(
+            "ConnectionSideWall_EW_Top_" + a.name + "_to_" + b.name,
+            new Vector3(centerX, wallHeight * 0.5f, centerZ + zOffset),
+            new Vector3(length, wallHeight, wallThickness),
+            root
+        );
+
+        CreateConnectionWall(
+            "ConnectionSideWall_EW_Bottom_" + a.name + "_to_" + b.name,
+            new Vector3(centerX, wallHeight * 0.5f, centerZ - zOffset),
+            new Vector3(length, wallHeight, wallThickness),
+            root
+        );
+    }
+
+    void CreateNorthSouthConnectionSideWalls(Connection c, Transform root)
+    {
+        Room a = c.a;
+        Room b = c.b;
+
+        float z1;
+        float z2;
+
+        if (a.center.y < b.center.y)
+        {
+            z1 = a.Top;
+            z2 = b.Bottom;
+        }
+        else
+        {
+            z1 = b.Top;
+            z2 = a.Bottom;
+        }
+
+        float gapLength = Mathf.Abs(z2 - z1);
+
+        if (gapLength < 0.1f)
+            return;
+
+        float centerX = c.doorWorldPos.x;
+        float centerZ = (z1 + z2) * 0.5f;
+
+        float length = gapLength + connectionSideWallOverlap * 2.0f;
+
+        float xOffset = doorWidth * 0.5f + wallThickness * 0.5f;
+
+        CreateConnectionWall(
+            "ConnectionSideWall_NS_Left_" + a.name + "_to_" + b.name,
+            new Vector3(centerX - xOffset, wallHeight * 0.5f, centerZ),
+            new Vector3(wallThickness, wallHeight, length),
+            root
+        );
+
+        CreateConnectionWall(
+            "ConnectionSideWall_NS_Right_" + a.name + "_to_" + b.name,
+            new Vector3(centerX + xOffset, wallHeight * 0.5f, centerZ),
+            new Vector3(wallThickness, wallHeight, length),
+            root
+        );
+    }
+
+    void CreateConnectionWall(string name, Vector3 position, Vector3 scale, Transform root)
+    {
+        GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        wall.name = name;
+        wall.transform.parent = root;
+        wall.transform.position = position;
+        wall.transform.localScale = scale;
+
+        Renderer renderer = wall.GetComponent<Renderer>();
+        renderer.material = wallMat;
+
+        // 如果你有使用 Unwalkable layer，建議把這些牆也設成 Unwalkable
+        int unwalkableLayer = LayerMask.NameToLayer(unwalkableLayerName);
+        if (unwalkableLayer >= 0)
+            wall.layer = unwalkableLayer;
+    }
+
+    Bounds GetGeneratedMapBounds(float padding)
+    {
+        if (rooms == null || rooms.Count == 0)
+        {
+            return new Bounds(Vector3.zero, new Vector3(50f, 5f, 50f));
+        }
+
+        float minX = float.MaxValue;
+        float maxX = float.MinValue;
+        float minZ = float.MaxValue;
+        float maxZ = float.MinValue;
+
+        foreach (Room r in rooms)
+        {
+            minX = Mathf.Min(minX, r.Left);
+            maxX = Mathf.Max(maxX, r.Right);
+            minZ = Mathf.Min(minZ, r.Bottom);
+            maxZ = Mathf.Max(maxZ, r.Top);
+        }
+
+        minX -= padding;
+        maxX += padding;
+        minZ -= padding;
+        maxZ += padding;
+
+        Vector3 center = new Vector3(
+            (minX + maxX) * 0.5f,
+            0f,
+            (minZ + maxZ) * 0.5f
+        );
+
+        Vector3 size = new Vector3(
+            maxX - minX,
+            5f,
+            maxZ - minZ
+        );
+
+        return new Bounds(center, size);
     }
 }

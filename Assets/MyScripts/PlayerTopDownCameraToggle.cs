@@ -41,6 +41,12 @@ public class PlayerTopDownCameraToggle : MonoBehaviour
     private GameObject markerRoot;
     private GUIStyle labelStyle;
 
+    [Header("Top-Down Zoom")]
+    public bool enableTopDownZoom = true;
+    public float zoomSpeed = 3.0f;
+    public float minOrthographicSize = 15.0f;
+    public float maxOrthographicSize = 90.0f;
+
     void Start()
     {
         originalFixedDeltaTime = Time.fixedDeltaTime;
@@ -73,6 +79,11 @@ public class PlayerTopDownCameraToggle : MonoBehaviour
         if (Keyboard.current[toggleKey].wasPressedThisFrame)
         {
             SetTopDownMode(!isTopDown);
+        }
+
+        if (isTopDown && enableTopDownZoom)
+        {
+            HandleTopDownZoom();
         }
 
         if (showYouAreHereMarker && markerRoot != null)
@@ -302,5 +313,35 @@ public class PlayerTopDownCameraToggle : MonoBehaviour
         Time.timeScale = 1f;
         Time.fixedDeltaTime = originalFixedDeltaTime;
         AudioListener.pause = false;
+    }
+
+    void HandleTopDownZoom()
+    {
+        if (topDownCamera == null)
+            return;
+
+        if (Mouse.current == null)
+            return;
+
+        float scrollY = Mouse.current.scroll.ReadValue().y;
+
+        if (Mathf.Abs(scrollY) < 0.01f)
+            return;
+
+        // 滾輪往上通常是 zoom in，所以 orthographicSize 要變小
+        float zoomDelta = -scrollY * zoomSpeed * 0.01f;
+
+        float newSize = topDownCamera.orthographicSize + zoomDelta;
+
+        newSize = Mathf.Clamp(
+            newSize,
+            minOrthographicSize,
+            maxOrthographicSize
+        );
+
+        topDownCamera.orthographicSize = newSize;
+
+        // 記住目前縮放，下次切回俯瞰時沿用
+        orthographicSize = newSize;
     }
 }
