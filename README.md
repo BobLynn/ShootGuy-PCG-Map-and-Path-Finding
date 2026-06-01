@@ -1,184 +1,76 @@
-# Shoot Guy
+# ShootGuy PCG Map and Path Finding
 
-Final Project for AI for Games (Spring 2026)
+這是《AI for Games》期末專案的 Unity 專案，目前包含：
 
-A Hitman-style stealth sandbox featuring:
+* PCG 地圖生成
+* Grid Map / Waypoint Graph
+* Pathfinding 測試
+* 玩家機器人控制與測試場景
 
-- Procedural Content Generation (PCG)
-- Custom Pathfinding System
-- Grid Graph Navigation
-- Waypoint Graph Navigation
-- Steering Behaviors
-- FSM / Behavior Tree AI
-- Guard and Target AI Systems
+## Unity 版本
 
----
+請使用以下 Unity 版本開啟：
 
-# Unity Version
-
-This project must be opened with:
-
+```txt
 Unity 6000.4.5f1
+```
 
-Using other Unity versions may cause:
+使用其他版本可能會出現套件不相容、場景引用遺失或材質錯誤。
 
-- URP incompatibility
-- Package mismatch
-- Missing references
-- Serialization issues
+## 如何在另一台電腦開啟
 
----
+### 1. Clone 專案
 
-# Render Pipeline
+先安裝 Git，然後在想放專案的位置執行：
 
-Universal Render Pipeline (URP)
+```bash
+git clone https://github.com/BobLynn/ShootGuy-PCG-Map-and-Path-Finding.git
+```
 
----
+### 2. 用 Unity Hub 開啟
 
-# Required Packages
+1. 打開 Unity Hub
+2. 點選 `Add / Open`
+3. 選擇剛剛 clone 下來的資料夾：
 
-Installed through Package Manager:
+```txt
+ShootGuy-PCG-Map-and-Path-Finding
+```
 
-- AI Navigation
-- Cinemachine
-- Input System
+4. 使用 `Unity 6000.4.5f1` 開啟專案
 
----
+第一次開啟時 Unity 會重新生成 `Library/`，所以會比較久。
 
-# External Assets
+### 3. 開啟測試場景
 
-The following third-party assets are NOT included in this repository:
+目前主要測試場景在：
 
-## Apartment Kit
+```txt
+Assets/Scenes/PCGScene_1.unity
+```
 
-Unity Asset Store
+也可以查看：
 
-https://assetstore.unity.com/packages/3d/environments/apartment-kit-124055
+```txt
+Assets/Scenes/AptScene.unity
+```
 
-Import manually before opening the main scene.
+### 4. 按 Play 測試
 
----
+開啟場景後按下 Play，即可測試目前的 PCG 地圖、玩家機器人與 pathfinding 相關功能。
 
-# Main Systems
+## 注意事項
 
-## PCG System
+本 repo 不包含 Unity 自動生成的暫存資料，例如：
 
-File:
+```txt
+Library/
+Logs/
+Temp/
+Obj/
+Build/
+```
 
-Assets/Scripts/PCG/VillaPCG_v2.cs
+這些資料夾會由 Unity 自動重新產生，不需要手動加入 Git。
 
-Features:
-
-- Runtime map generation
-- Public / Restricted areas
-- Obstacle generation
-- Room generation
-- Navigation evaluation
-
----
-
-## Pathfinding
-
-Grid-based navigation
-
-Files:
-
-- GridMap.cs
-- GridMap3D.cs
-
-Waypoint-based navigation
-
-Files:
-
-- WaypointGraph.cs
-- WaypointGraph3D.cs
-
-Algorithms:
-
-- A*
-- Dijkstra
-
----
-
-## Agent AI
-
-Player Robot
-
-Features:
-
-- Movement
-- Ledge Climbing
-- Navigation Testing
-
-Guard AI
-
-Features:
-
-- Patrol
-- Investigation
-- Chase
-
-Target AI
-
-Features:
-
-- Escape
-- Route Planning
-
----
-
-# Main Scene
-
-Open:
-
-Assets/Scenes/MainSandbox.unity
-
-Press Play.
-
-The map will be generated at runtime.
-
----
-
-# Controls
-
-WASD : Move
-
-Space : Jump
-
-Mouse : Camera
-
----
-
-# Repository Structure
-
-Assets/
-│
-├── Scenes/
-├── Scripts/
-│ ├── PCG/
-│ ├── Navigation/
-│ ├── AI/
-│ └── Player/
-│
-├── Prefabs/
-├── Materials/
-├── Models/
-
-Packages/
-ProjectSettings/
-
----
-
-# Known Issues
-
-- PCG currently generates runtime-only maps.
-- Some Asset Store assets must be imported manually.
-- Pathfinding evaluation is under development.
-
----
-
-# Authors
-
-Hins-Wei, Lin
-AI for Games
-NCKU Spring 2026
+如果場景出現材質或模型遺失，請確認是否有使用到未包含在 repo 內的外部素材或 Asset Store 資產。
