@@ -1,4 +1,5 @@
 using UnityEngine;
+using KevinIglesias;
 
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(Agent))] // 確保它跟 Agent 掛在一起
@@ -8,6 +9,7 @@ public class AgentLocomotion : MonoBehaviour
     private CharacterController _controller;
     private Animator _animator;
     private bool _hasAnimator;
+
 
     [Header("Movement Status")]
     public Vector3 velocity; // 目前的實際速度 (開放給 Navigator 讀取)
@@ -68,8 +70,16 @@ public class AgentLocomotion : MonoBehaviour
         // 1.1. 攔截移動：如果大腦要求原地轉向，就強制煞車並清空推力
         if (_agent.isTurningInPlace)
         {
-            velocity = Vector3.Lerp(velocity, Vector3.zero, dt * 10f);
-            _agent.steeringForce = Vector3.zero; 
+            // 【核心修正】：如果是因為要攻擊而停下，直接將物理速度歸零，拒絕任何慣性滑步！
+            if (_agent.brain.currentDecision == AgentDecision.ATTACK)
+            {
+                velocity = Vector3.zero;
+            }
+            else 
+            {
+                velocity = Vector3.Lerp(velocity, Vector3.zero, dt * 10f);
+            }
+            _agent.steeringForce = Vector3.zero;
         }
         else
         {
@@ -108,11 +118,49 @@ public class AgentLocomotion : MonoBehaviour
         }
 
         // 5. 更新動畫
+        // if (_hasAnimator)
+        // {
+        //     _animationBlend = Mathf.Lerp(_animationBlend, horizontalVelocity.magnitude, dt * speedChangeRate);
+        //     if (_animationBlend < 0.01f) _animationBlend = 0f;
+
+        //     _animator.SetFloat(_animIDSpeed, _animationBlend);
+        //     _animator.SetFloat(_animIDMotionSpeed, 1f);
+
+            
+        // }
         if (_hasAnimator)
         {
-            _animationBlend = Mathf.Lerp(_animationBlend, horizontalVelocity.magnitude, dt * speedChangeRate);
-            if (_animationBlend < 0.01f) _animationBlend = 0f;
+        //     // 初始化/切換武器姿勢 (確保 Agent 拿著正確武器的 Idle 動畫)
+        //     if (_agent.currentWeapon != _agent.defaultWeapon)
+        //     {
+        //         _agent.currentWeapon = _agent.defaultWeapon;
+        //         _animator.SetTrigger(_agent.currentWeapon.ToString());
+        //     }
 
+            float speed = horizontalVelocity.magnitude;
+            // SoldierMovement targetMovement = SoldierMovement.NoMovement;
+
+            // 如果正在原地轉向、發呆，或是處於攻擊階段，強制鎖定為 NoMovement 狀態
+            // if (_agent.isTurningInPlace || _agent.isWaiting || _agent.brain.currentDecision == AgentDecision.ATTACK)
+            // {
+            //     targetMovement = SoldierMovement.NoMovement;
+            // }
+            // else if (speed > 0.1f)
+            // {
+            //     if (speed > _agent.defaultSpeed + 0.5f) targetMovement = SoldierMovement.Run;
+            //     else targetMovement = SoldierMovement.Walk;
+            // }
+
+            // // 防呆：只在狀態改變時發送 Trigger，避免每幀覆蓋導致動畫卡死！
+            // if (targetMovement != _agent.currentMovement)
+            // {
+            //     _animator.SetTrigger(targetMovement.ToString());
+            //     _agent.currentMovement = targetMovement;
+            // }
+
+            // 保留原本的 BlendTree 更新 (如果你有使用混合樹的話)
+            _animationBlend = Mathf.Lerp(_animationBlend, speed, dt * speedChangeRate);
+            if (_animationBlend < 0.01f) _animationBlend = 0f;
             _animator.SetFloat(_animIDSpeed, _animationBlend);
             _animator.SetFloat(_animIDMotionSpeed, 1f);
         }
@@ -168,6 +216,14 @@ public class AgentLocomotion : MonoBehaviour
         _animIDJump = Animator.StringToHash("Jump");
         _animIDFreeFall = Animator.StringToHash("FreeFall");
         _animIDMotionSpeed = Animator.StringToHash("MotionSpeed");
+    }
+
+    /// <summary>
+    /// 【新增】供外部腳本 (如 AgentBrain) 呼叫單次動作動畫
+    /// </summary>
+    public void PlayAction(SoldierAction action)
+    {
+        if (_hasAnimator) _animator.SetTrigger(action.ToString());
     }
 
     // 動畫事件接收

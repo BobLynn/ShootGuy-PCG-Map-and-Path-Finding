@@ -45,19 +45,28 @@ public class SensorySystem : MonoBehaviour
     {
         float distanceToSound = Vector3.Distance(transform.position, stimulus.position);
 
-        if (distanceToSound <= stimulus.radius)
+        // 根據聲音類型做出不同的戰術反應
+        if (stimulus.type == "Gunshot" && stimulus.source != null)
         {
-            UnityEngine.Debug.Log($"{gameObject.name} 聽到了 {stimulus.type}!");
-
-            // targetInvestigatePos = stimulus.position;
-            // hasSuspiciousStimulus = true;
-
-            // 呼叫 Brain 正式進入 Investigate 流程
-            if (!canSeePlayer) // 如果当前没有看到玩家，才去调查声音来源
+            // 聽到槍聲：立刻將開槍者視為威脅，尋找掩體躲避！
+            // 條件：只有在還沒進入戰鬥開火，或是還沒在逃跑時才觸發 (避免一直打斷當前動作)
+            if (agent.brain.currentDecision != AgentDecision.ATTACK && 
+                agent.brain.currentDecision != AgentDecision.RUN)
+            {
+                // 把聲音來源 (Player) 傳給大腦，強制啟動戰術規避
+                agent.brain.StartTacticalDodge(stimulus.source.transform);
+            }
+        }
+        else
+        {
+            // 聽到普通聲音 (例如腳步聲、硬幣聲)：前往調查
+            if (!canSeePlayer) 
             {
                 agent.brain.StartInvestigation(stimulus.position);
             }
         }
+        // 玩家開搶時呼叫下面這行來廣播聲音刺激 (記得把 playerObject 換成你的玩家物件參照)
+        // StimulusManager.Instance.BroadcastAudioStimulus(pos, radius, "Gunshot", playerObject);
     }
 
     // ==========================================

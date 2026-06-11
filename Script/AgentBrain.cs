@@ -1,12 +1,10 @@
-
-using System.Data.Common;
-using System.Diagnostics.Contracts;
 using UnityEngine;
-
+using KevinIglesias;
 [RequireComponent(typeof(Agent))]
 public class AgentBrain : MonoBehaviour
 {
     private Agent agent;
+    private Vector3 spawnPosition;
 
     [Header("Current Decision")]
     public AgentDecision currentDecision = AgentDecision.PATROL;
@@ -50,10 +48,16 @@ public class AgentBrain : MonoBehaviour
     public float fleeReactionTime = 0.5f; 
     public float hideSearchRadius = 25f;    // 尋找遮蔽障礙物的球體半徑
     public float distanceBehindObstacle = 2.5f; // 躲在障礙物中線後方多遠的距離
+
+ 
+    // 👇 新增的 Cover Reservation 設定
+    public float coverCrowdRadius = 2.0f;     // 檢查掩體周圍多大範圍內有其他 Agent
+    public float crowdPenaltyWeight = 15.0f;  // 每多一個 Agent，該掩體的分數懲罰 (等同於增加 15m 的距離成本)
+    private Vector3 currentDodgePoint;     // 當前計算出的視線死角盲區點
     
     private int fleePhase = 0;
     private float fleeTimer = 0f;
-    private Vector3 currentDodgePoint;     // 當前計算出的視線死角盲區點
+    
 
 
     void Awake()
@@ -63,11 +67,14 @@ public class AgentBrain : MonoBehaviour
         agent.navigator = this.GetComponent<AgentNavigator>(); // 確保 Navigator 參照正確
         agent.sensory = this.GetComponent<SensorySystem>(); // 確保 Sensory 參照正確
 
+        ApplyWeaponStats();
+
 
         // 建立一個隱藏的虛擬目標，當我們只需要 Agent 前往某個座標(而非追逐特定實體)時使用
         dummyTarget = new GameObject($"DummyTarget_{gameObject.name}");
 
-        attackRange = agent.sensory.viewRadius * 0.6f; // 確保攻擊距離不超過視野距離，避免邏輯衝突
+        // attackRange = agent.sensory.viewRadius * 0.6f; // 確保攻擊距離不超過視野距離，避免邏輯衝突
+        
         // 如果有掛載 LineRenderer，就抓取它來做視覺提示
         TryGetComponent(out aimLaser);
         if (aimLaser != null) aimLaser.enabled = false;
@@ -75,7 +82,11 @@ public class AgentBrain : MonoBehaviour
 
     void Start()
     {
-        ChangeRoute(defaultRouteName, startIndex, false);
+        currentDecision = defaultDecision;
+        spawnPosition = agent.transform.position;
+        if (currentDecision == AgentDecision.PATROL){
+            ChangeRoute(defaultRouteName, startIndex, false);
+        }
     }
 
     // 在 AgentBrain.cs 中
@@ -84,9 +95,13 @@ public class AgentBrain : MonoBehaviour
         // 1. 執行高階行為決策 (Patrol, Investigate 等)
         switch (currentDecision)
         {
+
             case AgentDecision.PATROL:
-            case AgentDecision.REST:
+            case AgentDecision.SHORTREST:
                 HandlePatrol();
+                break;
+            case AgentDecision.LONGREST:
+                HandleRest();
                 break;
             case AgentDecision.INVESTIGATE:
                 HandleInvestigate();
@@ -110,7 +125,7 @@ public class AgentBrain : MonoBehaviour
     }
 
     /// <summary>
-    /// 核心演算法：尋找最近且能完美阻擋玩家（威脅）視線的障礙物後方死角點
+    /// 核心演算法：尋找視線死角，並加入意圖預約 (Intent Reservation) 防止多名 Agent 搶奪同一個掩體
     /// </summary>
     public Vector3 CalculateDodgePoint()
     {
@@ -133,11 +148,15 @@ public class AgentBrain : MonoBehaviour
         if (validThreats.Count == 0) return transform.position;
         threatCenter /= validThreats.Count; // 算出威脅群的幾何中心
 
+        // ✨ 優化：在迴圈外先抓取場上所有的 Agent，避免在迴圈內重複取得消耗效能
+        // 實務上，若追求極致效能，可以在 Agent.cs 的 Awake/OnDestroy 維護一個 public static List<Agent> allAgents
+        Agent[] allAgents = FindObjectsByType<Agent>(FindObjectsSortMode.None);
+
         // 1. 掃描周圍特定 Layer 的所有物理障礙物
         Collider[] obstacles = Physics.OverlapSphere(transform.position, hideSearchRadius, agent.navigator.ObstacleLayers);
-        
+
         Vector3 bestHidePos = transform.position;
-        float closestDistToAgent = Mathf.Infinity;
+        float bestScore = Mathf.Infinity; // 替換掉原本的 closestDistToAgent，改用綜合評分
         bool foundValidSpot = false;
 
         foreach (Collider obs in obstacles)
@@ -149,7 +168,7 @@ public class AgentBrain : MonoBehaviour
             if (isThreat) continue;
 
             Vector3 obsPos = obs.transform.position;
-            
+    
             // 2. 決定障礙物的背側：從「威脅群中心點」指向「障礙物」的延伸線
             Vector3 dirFromThreatCenter = (obsPos - threatCenter).normalized;
             dirFromThreatCenter.y = 0;
@@ -173,13 +192,46 @@ public class AgentBrain : MonoBehaviour
                 }
             }
 
-            // 4. 戰術評估：如果所有敵人都看不到這個點，評估它是否離 Agent 最近
+            // 4. 戰術評估：視線安全過關後，計算綜合分數 (距離 + 目的地擁擠懲罰)
             if (isValidForAllThreats)
             {
-                float distToAgent = Vector3.Distance(transform.position, potentialHidePos);
-                if (distToAgent < closestDistToAgent)
+                float baseDistance = Vector3.Distance(transform.position, potentialHidePos);
+                
+                // --- ✨ Cover Reservation (意圖預約制) ---
+                int reservedCount = 0;
+                
+                foreach (Agent ally in allAgents)
                 {
-                    closestDistToAgent = distToAgent;
+                    // 排除自己與變成威脅的目標 (例如叛變或玩家)
+                    if (ally == this.agent || isThreat) continue;
+
+                    // 1. 意圖預約檢查：如果隊友正在移動，檢查他們的「目的地」是否在這個掩體附近
+                    if (ally.targetObject != null)
+                    {
+                        float distToAllyTarget = Vector3.Distance(ally.targetObject.position, potentialHidePos);
+                        if (distToAllyTarget < coverCrowdRadius)
+                        {
+                            reservedCount++;
+                        }
+                    }
+                    // 2. 實體佔用檢查：如果隊友沒有目標(發呆或守衛中)，則檢查他們的「物理位置」
+                    else
+                    {
+                        float distToAllyBody = Vector3.Distance(ally.transform.position, potentialHidePos);
+                        if (distToAllyBody < coverCrowdRadius)
+                        {
+                            reservedCount++;
+                        }
+                    }
+                }
+
+                // 計算分數：距離越遠分數越高(越爛)，每個佔用者會大幅增加這個點的成本分數
+                float score = baseDistance + (reservedCount * crowdPenaltyWeight);
+                // ------------------------------------------------
+
+                if (score < bestScore)
+                {
+                    bestScore = score;
                     bestHidePos = potentialHidePos;
                     foundValidSpot = true;
                 }
@@ -204,7 +256,7 @@ public class AgentBrain : MonoBehaviour
     {
         if (currentDecision == AgentDecision.RUN) return; // 已經在逃跑中則不重複觸發
 
-        UnityEngine.Debug.Log($"{agent.Name} (Guard) 遭到火力威脅/瞄準，觸發戰術尋找掩體！");
+        UnityEngine.Debug.Log($"{agent.Name} ({agent.agentType}) 遭到火力威脅/瞄準，觸發戰術尋找掩體！");
         runToSpecificEndpoint = false; // 警衛的目的是找掩體，而非跑去關卡終點
         StartFlee(shooter, 1); // 強制跳過發呆階段，直接進入 Phase 1 尋路進掩體
     }
@@ -213,9 +265,10 @@ public class AgentBrain : MonoBehaviour
     /// </summary>
     public void OnPlayerSpotted(Transform player, float distance)
     {
-        if (agent.Type == "Target")
+        if (agent.Type == "Civilian")
         {
             UnityEngine.Debug.Log($"{agent.Name} (Target) 发现玩家了！");
+            currentDecision = AgentDecision.RUN;
             StartFlee(player);
 
         }
@@ -230,6 +283,7 @@ public class AgentBrain : MonoBehaviour
         {
             if (currentDecision != AgentDecision.ATTACK)
             {
+                currentDecision = AgentDecision.ATTACK;
                 StartAttack(player);
             }
         }
@@ -237,6 +291,7 @@ public class AgentBrain : MonoBehaviour
         {
             if (currentDecision != AgentDecision.CHASE)
             {
+                currentDecision = AgentDecision.CHASE;
                 StartChase(player);
             }
         }
@@ -330,6 +385,7 @@ public class AgentBrain : MonoBehaviour
     public void StartFlee(Transform threat, int forceStartPhase = 0)
     {
         currentDecision = AgentDecision.RUN;
+        agent.animator.SetTrigger("Sprint");
         
         // 【修正】正確將威脅存入陣列，而不是覆蓋 targetObject
         agent.threatObjects = new Transform[] { threat }; 
@@ -372,7 +428,7 @@ public class AgentBrain : MonoBehaviour
             if (Vector3.Distance(flatPos, flatTarget) < agent.navigator.waypointThreshold)
             {
                 UnityEngine.Debug.LogWarning("【遊戲結束】擊殺目標（Target）已成功逃離至終點！");
-                currentDecision = AgentDecision.REST;
+                currentDecision = AgentDecision.SHORTREST;
                 agent.navigator.ResetNavigation();
             }
             return;
@@ -465,10 +521,13 @@ public class AgentBrain : MonoBehaviour
     public void StartChase(Transform target, int forceStartPhase = 0)
     {
         currentDecision = AgentDecision.CHASE;
+        agent.animator.SetTrigger("Sprint");
+
         agent.targetObject = target;
         chasePhase = forceStartPhase;
         chaseTimer = 0f;
         agent.sensory.viewAngle = 45f; // 調整視野角度，讓 Agent 在追擊時能看到更廣的範圍
+        agent.isWaiting = false;
 
         agent.navigator.ResetNavigation();
         UnityEngine.Debug.Log("Spotted! Entering Chase Phase 0 (Reaction)");
@@ -481,6 +540,8 @@ public class AgentBrain : MonoBehaviour
             agent.currentState = AgentState.PURSUE;
             UnityEngine.Debug.Log("Force starting at Chase Phase 1 (Active Pursuit)");
         }
+
+        
     }
 
     private void HandleChase()
@@ -514,21 +575,61 @@ public class AgentBrain : MonoBehaviour
         }
     }
     // --- Combat & Shooting 邏輯 ---
+
+    /// <summary>
+    /// 動態配置武器參數
+    /// </summary>
+    private void ApplyWeaponStats()
+    {
+        switch (agent.currentWeapon)
+        {
+            case SoldierWeapons.AssaultRifle: // 步槍：中距離、瞄準快、射速高
+                attackRange = agent.sensory.viewRadius * 0.7f; aimingTime = 1.5f; lockTime = 0.7f; attackCooldown = 0.7f;
+                shootPoint.localPosition = new Vector3(0.116f, 1.255f, 0.711f); // 調整槍口位置
+                break;
+            case SoldierWeapons.Rifle: // 狙擊槍：長距離、瞄準慢、射速慢
+                attackRange = agent.sensory.viewRadius * 0.9f; aimingTime = 3.0f; lockTime = 1.0f; attackCooldown = 2.5f;
+                shootPoint.localPosition = new Vector3(0.139f, 1.336f, 1.144f); // 調整槍口位置
+                break;
+            case SoldierWeapons.Gun: // 手槍：短距離、瞄準極快
+                attackRange = agent.sensory.viewRadius * 0.5f; aimingTime = 1.0f; lockTime = 0.6f; attackCooldown = 1.0f;
+                shootPoint.localPosition = new Vector3(0.19f, 1.23f, 0.667f); // 調整槍口位置
+                break;
+            case SoldierWeapons.Bazooka: // 火箭筒：破壞力強、前搖後搖都極長
+                attackRange = agent.sensory.viewRadius * 0.8f; aimingTime = 3.5f; lockTime = 1.5f; attackCooldown = 4.0f;
+                shootPoint.localPosition = new Vector3(0.191f, 1.405f, 0.842f); // 調整槍口位置
+                break;
+            default:
+                attackRange = agent.sensory.viewRadius * 0.7f; aimingTime = 2.0f; lockTime = 0.8f; attackCooldown = 1.5f;
+                shootPoint.localPosition = new Vector3(0, 1.23f, 0.47f); // 調整槍口位置
+                break;
+        }
+        
+        // 確保攻擊距離不超過感官視野，否則會出現邏輯 Bug
+        if (attackRange > agent.sensory.viewRadius * 0.9f) 
+            attackRange = agent.sensory.viewRadius * 0.9f;
+    }
+
     public void StartAttack(Transform target)
     {
         currentDecision = AgentDecision.ATTACK;
+        agent.isWaiting = false;
         agent.targetObject = target;
         combatPhase = 0;
-        combatTimer = 2f;
-        agent.sensory.viewAngle = 80f;
+        combatTimer = 0f;
+        agent.sensory.viewAngle = 80f; // 調整視野角度，讓 Agent 在攻擊時能看到更廣的範圍
         
         agent.navigator.ResetNavigation(); // 戰鬥時停止尋路移動
+
+        // 觸發舉槍瞄準動畫
+        agent.animator.ResetTrigger("Sprint");
+        agent.animator.SetTrigger("Shoot03");
     }
 
     private void HandleAttack()
     {
         if (agent.targetObject == null) return;
-
+    
         switch (combatPhase)
         {
             case 0: // Phase 0: 瞄準階段 (Aiming)
@@ -554,7 +655,7 @@ public class AgentBrain : MonoBehaviour
                 if (combatTimer >= (aimingTime - lockTime))
                 {
                     combatPhase = 1;
-                    UnityEngine.Debug.Log("Entering lock phase 1. Player has a brief window to dodge!");
+                    UnityEngine.Debug.Log($"{agent.name} entering lock phase 1. Player has a brief window to dodge!");
                     
                     // 記錄當下目標的方向，這就是等一下實體子彈要飛出去的絕對方向！
                     Vector3 targetPos = agent.targetObject.position + Vector3.up * 1f;
@@ -576,7 +677,7 @@ public class AgentBrain : MonoBehaviour
 
                 if (combatTimer >= aimingTime)
                 {
-                    UnityEngine.Debug.Log("Lock phase complete. Firing bullet!");
+                    UnityEngine.Debug.Log($"{agent.name} lock phase complete. Firing bullet!");
                     combatPhase = 2; // 時間到，準備擊發
                 }
                 // UnityEngine.Debug.Log($"Locking... Time: {combatTimer:F2}s, LockedDirection: {lockedDirection}");
@@ -586,6 +687,7 @@ public class AgentBrain : MonoBehaviour
                 if (aimLaser != null) aimLaser.enabled = false; // 關閉雷射
                 
                 ShootBullet(lockedDirection);
+
                 
                 combatTimer = 0f;
                 combatPhase = 3; // 進入冷卻
@@ -603,6 +705,7 @@ public class AgentBrain : MonoBehaviour
                     // 冷卻結束，重新進入瞄準輪迴
                     combatPhase = 0; 
                     combatTimer = 0f;
+
                 }
                 // UnityEngine.Debug.Log($"Cooling down... Time: {combatTimer:F2}s");
                 break;
@@ -611,21 +714,24 @@ public class AgentBrain : MonoBehaviour
 
     private void ShootBullet(Vector3 direction)
     {
+        agent.animator.SetTrigger("Shoot01");
         // 改成跟 Pool 借子彈：
         GameObject bullet = BulletPool.Instance.GetBullet(shootPoint.position, Quaternion.LookRotation(direction));
         
         if (bullet.TryGetComponent(out SimpleProjectile projectile))
         {
-            projectile.Fire(direction);
+            projectile.Fire(direction, false);
         }
         
-        UnityEngine.Debug.Log("Bang! Fired pooled bullet at locked direction.");
+        UnityEngine.Debug.Log($"{agent.name} Bang! Fired pooled bullet at locked direction.");   
     }
 
     // --- Investigate 邏輯 ---
     public void StartInvestigation(Vector3 targetPos, int forceStartPhase = 0)
     {
         currentDecision = AgentDecision.INVESTIGATE;
+        agent.animator.SetTrigger("Sprint");
+        
         investigatePos = targetPos;
         investigatePhase = forceStartPhase;
         investigateWaitTimer = 2.0f; // 設定停留觀察的時間
@@ -634,6 +740,8 @@ public class AgentBrain : MonoBehaviour
 
         agent.navigator.ResetNavigation();
         agent.isWaiting = false; // 打斷巡邏的發呆
+
+        
 
         // 直接從停留觀察開始，跳過轉向階段
         if (forceStartPhase == 1)
@@ -700,13 +808,30 @@ public class AgentBrain : MonoBehaviour
 
                 if (Vector3.Distance(flatPos, flatTarget) < agent.navigator.waypointThreshold)
                 {
-                    // 抵達現場，沒看到東西 (視覺由 SensorySystem 處理，若看到會自動切換為 CHASE)
-                    currentDecision = defaultDecision;
-                    if (currentDecision == AgentDecision.PATROL)
+                    
+                        
+                    if (defaultDecision == AgentDecision.PATROL)
                     {
+                        currentDecision = defaultDecision;
                         agent.navigator.ResetNavigation();
-                        ChangeRoute(defaultRouteName, -1, true); // 自動尋找最近的巡邏點恢復巡邏
-                        UnityEngine.Debug.Log("Investigation complete. Returning to patrol.");
+                        ChangeRoute(defaultRouteName, -1, true); 
+                    }
+                    // 👇 補上 LONGREST 的回家邏輯
+                    else if (defaultDecision == AgentDecision.LONGREST)
+                    {
+                        if (agent.targetObject.position == spawnPosition)
+                        {
+                            // 已經在出生點了，直接切回預設狀態
+                            currentDecision = defaultDecision;
+                            agent.navigator.ResetNavigation();
+                            agent.currentState = agent.defaultState;
+                            return;
+                        }
+
+                        StartInvestigation(spawnPosition,1);
+                        
+                        // 註：當它走回 spawnPosition 後，AgentNavigator 會觸發 ARRIVE，
+                        // 屆時你只要確保它能重新呼叫 HandleRest() 即可！
                     }
                 }
                 break;
@@ -775,7 +900,7 @@ public class AgentBrain : MonoBehaviour
                     else
                     {
                         agent.currentState = AgentState.ARRIVE;
-                        currentDecision = AgentDecision.REST;
+                        currentDecision = AgentDecision.SHORTREST;
                         return;
                     }
                 }
@@ -790,9 +915,20 @@ public class AgentBrain : MonoBehaviour
             if (agent.targetObject != null && Vector3.Distance(flatPos, flatTarget) < agent.navigator.waypointThreshold * 2)
             {
                 agent.isWaiting = true;
-                waitTimer = currentRoute.waypoints[currentRouteWaypointIndex].waitTime;
-                currentDecision = AgentDecision.REST;
-                UnityEngine.Debug.Log($"Arrived at waypoint {currentRouteWaypointIndex}. Waiting for {waitTimer} seconds.");
+                
+                if (defaultDecision == AgentDecision.PATROL)
+                {
+                    waitTimer = currentRoute.waypoints[currentRouteWaypointIndex].waitTime;
+                    currentDecision = AgentDecision.SHORTREST;
+                    UnityEngine.Debug.Log($"Arrived at waypoint {currentRouteWaypointIndex}. Waiting for {waitTimer} seconds.");
+                }
+                else if (defaultDecision == AgentDecision.LONGREST)
+                {
+                    waitTimer = 999f; // 無限等待，直到被外部事件打斷（例如玩家靠近觸發調查）
+                    currentDecision = AgentDecision.LONGREST;
+                    UnityEngine.Debug.Log($"Arrived at rest point. Waiting indefinitely until disturbed.");
+                }
+                
             }
         }
 
@@ -800,6 +936,13 @@ public class AgentBrain : MonoBehaviour
         {
             agent.targetObject = currentRoute.waypoints[currentRouteWaypointIndex].point;
         }
+    }
+
+    private void HandleRest()
+    {
+        agent.ClearStates();
+        agent.targetObject = null;
+        agent.isWaiting = true;
     }
     
     private void OnDrawGizmos()

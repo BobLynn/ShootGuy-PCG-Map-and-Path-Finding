@@ -111,20 +111,22 @@ namespace KevinIglesias
                 animator.SetTrigger(action.ToString());
             }
 
-            if(action == SoldierAction.ChangeWeapons)
-            {
-                if(changingWeaponsCoroutine == null)
-                {
-                    changingWeaponsCoroutine = ChangingWeapons();
-                    StartCoroutine(changingWeaponsCoroutine);
-                }
-            }else{
-                if(changingWeaponsCoroutine != null)
-                {
-                    StopCoroutine(changingWeaponsCoroutine);
-                    changingWeaponsCoroutine = null;
-                }
-            }
+            ///
+            /// 現階段沒用
+            // if(action == SoldierAction.ChangeWeapons)  
+            // {
+            //     if(changingWeaponsCoroutine == null)
+            //     {
+            //         changingWeaponsCoroutine = ChangingWeapons();
+            //         StartCoroutine(changingWeaponsCoroutine);
+            //     }
+            // }else{
+            //     if(changingWeaponsCoroutine != null)
+            //     {
+            //         StopCoroutine(changingWeaponsCoroutine);
+            //         changingWeaponsCoroutine = null;
+            //     }
+            // }
 
             animator.SetTrigger(movement.ToString());
         }
@@ -152,9 +154,10 @@ namespace KevinIglesias
             {
                 weapons[i].SetActive(false);
             }
-            
-            weapons[(int)newWeapon-1].SetActive(true);
-            
+            if (newWeapon != SoldierWeapons.None)
+            {
+                weapons[(int)newWeapon-1].SetActive(true);
+            }
             if(newWeapon == SoldierWeapons.DualGun)
             {
                 weapons[(int)SoldierWeapons.Gun-1].SetActive(true);

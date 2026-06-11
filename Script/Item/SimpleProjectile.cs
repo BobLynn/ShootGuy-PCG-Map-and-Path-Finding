@@ -7,6 +7,8 @@ public class SimpleProjectile : MonoBehaviour
     public float speed = 20f;
     public float lifeTime = 5f;
     public int damage = 10;
+
+    public bool onTriggerStimulus = true; // 是否在觸發時廣播刺激
     
     private Vector3 moveDirection;
     private bool isFired = false;
@@ -23,10 +25,14 @@ public class SimpleProjectile : MonoBehaviour
         currentLifeTimer = 0f; // 每次拿出來都要重置計時器
     }
 
-    public void Fire(Vector3 direction)
+    public void Fire(Vector3 direction, bool callStimulus = false)
     {
         moveDirection = direction.normalized;
         isFired = true;
+        if (callStimulus)
+        {
+            StimulusManager.Instance.BroadcastAudioStimulus(transform.position, 30f, "BulletFire", gameObject);
+        }
         // 移除了原本的 Destroy(gameObject, lifeTime);
     }
 
@@ -51,6 +57,10 @@ public class SimpleProjectile : MonoBehaviour
         if (other.gameObject.layer == LayerMask.NameToLayer("Obstacle"))
         {
             DisableAndReturn(); // 撞牆，回收
+            if (onTriggerStimulus)
+            {
+                StimulusManager.Instance.BroadcastAudioStimulus(transform.position, 20f, "BulletTrigger", gameObject);
+            }
         }
         else if (other.CompareTag("Player"))
         {
