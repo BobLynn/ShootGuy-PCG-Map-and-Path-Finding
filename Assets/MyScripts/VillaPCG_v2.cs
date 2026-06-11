@@ -4,9 +4,11 @@ using UnityEditor.SceneManagement;
 #endif
 
 using System.Collections.Generic;
+using StarterAssets;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
-public class VillaPCG_v1 : MonoBehaviour
+public class VillaPCG_v2 : MonoBehaviour
 {
     [Header("Seed")]
     public int seed = 12345;
@@ -46,6 +48,21 @@ public class VillaPCG_v1 : MonoBehaviour
 
     [Header("Generation Mode")]
     public bool generateOnPlay = false;
+
+    [Header("Level Flow")]
+    public int startLevel = 1;
+    [Range(1, 3)]
+    public int currentLevel = 1;
+    public int finalPcgLevel = 3;
+    public bool resetToStartLevelOnPlay = true;
+    public bool teleportPlayerAfterGenerate = true;
+    public Key levelAdvanceKey = Key.E;
+    public float exitInteractRadius = 2.2f;
+    public string playerTag = "Player";
+
+    [Header("Level Objectives")]
+    public Material exitMat;
+    public Material targetMat;
 
     [Header("Connection Blocking")]
     public bool generateConnectionSideWalls = true;
@@ -91,9 +108,13 @@ public class VillaPCG_v1 : MonoBehaviour
 
     void Start()
     {
-        if (Application.isPlaying && generateOnPlay)
+        if (Application.isPlaying)
         {
-            Generate();
+            if (resetToStartLevelOnPlay)
+                currentLevel = Mathf.Clamp(startLevel, 1, finalPcgLevel);
+
+            if (generateOnPlay || resetToStartLevelOnPlay)
+                Generate();
         }
     }
 
@@ -101,6 +122,12 @@ public class VillaPCG_v1 : MonoBehaviour
     private List<Connection> connections = new List<Connection>();
     private List<Vector3> waypoints = new List<Vector3>();
     private Dictionary<string, List<string>> roomGraph = new Dictionary<string, List<string>>();
+    private string playerSpawnRoomName;
+    private string primaryGoalRoomName;
+    private string secondaryGoalRoomName;
+    private Room levelExitRoom;
+    private Room finalTargetRoom;
+    private Transform currentSpawnTransform;
 
     enum Side
     {
@@ -162,9 +189,11 @@ public class VillaPCG_v1 : MonoBehaviour
     //     Generate();
     // }
 
-    [ContextMenu("Generate Villa")]
+    [ContextMenu("Generate Current Level")]
     public void Generate()
     {
+        currentLevel = Mathf.Clamp(currentLevel, 1, finalPcgLevel);
+
         ClearOldMap();
 
         if (randomizeSeedOnPlay)
@@ -173,7 +202,7 @@ public class VillaPCG_v1 : MonoBehaviour
         Random.InitState(seed);
 
         CreateMaterialsIfMissing();
-        GenerateVillaLayout();
+        GenerateLevelLayout(currentLevel);
         BuildRoomGraph();
         ValidateReachability();
 
@@ -200,6 +229,7 @@ public class VillaPCG_v1 : MonoBehaviour
 
         GenerateWaypoints();
         CreatePlayerSpawn();
+        CreateLevelSpecificObjects();
 
         Physics.SyncTransforms();
 
@@ -211,9 +241,27 @@ public class VillaPCG_v1 : MonoBehaviour
         }
     #endif
 
-        Debug.Log("[VillaPCG] Runtime villa map generated.");
+        Debug.Log($"[VillaPCG] Runtime level {currentLevel} map generated.");
 
         RebuildNavigationAfterGenerate();
+
+        if (Application.isPlaying && teleportPlayerAfterGenerate)
+            TeleportPlayerToSpawn();
+    }
+
+    public void GoToLevel(int levelNumber)
+    {
+        int clampedLevel = Mathf.Clamp(levelNumber, 1, finalPcgLevel);
+        if (clampedLevel == currentLevel && Application.isPlaying)
+            return;
+
+        currentLevel = clampedLevel;
+        Generate();
+    }
+
+    public void AdvanceToNextLevel()
+    {
+        GoToLevel(currentLevel + 1);
     }
 
     [ContextMenu("Clear Generated Villa")]
@@ -226,6 +274,27 @@ public class VillaPCG_v1 : MonoBehaviour
     public void RegenerateWithNewSeed()
     {
         seed = Random.Range(0, 999999);
+        Generate();
+    }
+
+    [ContextMenu("Generate Level 1")]
+    public void GenerateLevelOne()
+    {
+        currentLevel = 1;
+        Generate();
+    }
+
+    [ContextMenu("Generate Level 2")]
+    public void GenerateLevelTwo()
+    {
+        currentLevel = 2;
+        Generate();
+    }
+
+    [ContextMenu("Generate Final PCG Level")]
+    public void GenerateFinalPcgLevel()
+    {
+        currentLevel = finalPcgLevel;
         Generate();
     }
 
@@ -292,9 +361,14 @@ public class VillaPCG_v1 : MonoBehaviour
         foreach (GameObject obj in toDelete)
         {
             if (Application.isPlaying)
+            {
+                obj.SetActive(false);
                 Destroy(obj);
+            }
             else
+            {
                 DestroyImmediate(obj);
+            }
         }
 
         rooms.Clear();
@@ -328,6 +402,83 @@ public class VillaPCG_v1 : MonoBehaviour
             coverMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
             coverMat.color = new Color(0.35f, 0.22f, 0.12f);
         }
+
+        if (exitMat == null)
+        {
+            exitMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            exitMat.color = new Color(0.15f, 0.75f, 0.35f);
+        }
+
+        if (targetMat == null)
+        {
+            targetMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            targetMat.color = new Color(0.75f, 0.08f, 0.08f);
+        }
+    }
+
+    void GenerateLevelLayout(int levelNumber)
+    {
+        playerSpawnRoomName = null;
+        primaryGoalRoomName = null;
+        secondaryGoalRoomName = null;
+        levelExitRoom = null;
+        finalTargetRoom = null;
+        currentSpawnTransform = null;
+
+        if (levelNumber == 1)
+        {
+            GenerateApproachAlleyLayout();
+        }
+        else if (levelNumber == 2)
+        {
+            GenerateServiceWingLayout();
+        }
+        else
+        {
+            GenerateVillaLayout();
+        }
+    }
+
+    void GenerateApproachAlleyLayout()
+    {
+        Room stagingAlley = AddRoom("L1 Staging Alley", new Vector2(0, -10), new Vector2(8, 5), SecurityLevel.Public);
+        Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, -4), new Vector2(8, 6), SecurityLevel.Public);
+        Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, 3), new Vector2(7, 8), SecurityLevel.SemiRestricted);
+        Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(-7, 3), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(7, 3), new Vector2(5, 5), SecurityLevel.Public);
+        Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, 10), new Vector2(8, 5), SecurityLevel.SemiRestricted);
+
+        ConnectRooms(stagingAlley, streetGate, Side.North, Side.South);
+        ConnectRooms(streetGate, maintenanceHall, Side.North, Side.South);
+        ConnectRooms(maintenanceHall, exitRoom, Side.North, Side.South);
+        ConnectRooms(maintenanceHall, generatorRoom, Side.West, Side.East);
+        ConnectRooms(maintenanceHall, supplyRoom, Side.East, Side.West);
+
+        playerSpawnRoomName = stagingAlley.name;
+        primaryGoalRoomName = exitRoom.name;
+        levelExitRoom = exitRoom;
+    }
+
+    void GenerateServiceWingLayout()
+    {
+        Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, -12), new Vector2(8, 5), SecurityLevel.Public);
+        Room loadingBay = AddRoom("L2 Loading Bay", new Vector2(0, -5), new Vector2(12, 7), SecurityLevel.SemiRestricted);
+        Room recordsRoom = AddRoom("L2 Records Room", new Vector2(-9, -5), new Vector2(5, 5), SecurityLevel.Restricted);
+        Room workshop = AddRoom("L2 Workshop", new Vector2(9, -5), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room securityCheckpoint = AddRoom("L2 Security Checkpoint", new Vector2(0, 3), new Vector2(8, 6), SecurityLevel.Restricted);
+        Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(-7, 4), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room exitRoom = AddRoom("L2 Executive Lift Exit", new Vector2(0, 11), new Vector2(8, 5), SecurityLevel.Restricted);
+
+        ConnectRooms(serviceEntrance, loadingBay, Side.North, Side.South);
+        ConnectRooms(loadingBay, securityCheckpoint, Side.North, Side.South);
+        ConnectRooms(securityCheckpoint, exitRoom, Side.North, Side.South);
+        ConnectRooms(loadingBay, recordsRoom, Side.West, Side.East);
+        ConnectRooms(loadingBay, workshop, Side.East, Side.West);
+        ConnectRooms(securityCheckpoint, guardLounge, Side.West, Side.East);
+
+        playerSpawnRoomName = serviceEntrance.name;
+        primaryGoalRoomName = exitRoom.name;
+        levelExitRoom = exitRoom;
     }
 
     void GenerateVillaLayout()
@@ -366,6 +517,11 @@ public class VillaPCG_v1 : MonoBehaviour
 
         ConnectRooms(guardRoom, targetRoom, Side.East, Side.West);
         ConnectRooms(safeRoom, targetRoom, Side.West, Side.East);
+
+        playerSpawnRoomName = courtyard.name;
+        primaryGoalRoomName = targetRoom.name;
+        secondaryGoalRoomName = safeRoom.name;
+        finalTargetRoom = targetRoom;
     }
 
     // Room AddRoom(string name, Vector2 center, Vector2 size, SecurityLevel security)
@@ -431,21 +587,35 @@ public class VillaPCG_v1 : MonoBehaviour
 
     void ValidateReachability()
     {
-        bool canReachTarget = IsReachable("Courtyard / Entrance", "Target Room");
-        bool targetCanReachSafe = IsReachable("Target Room", "Safe Room / Exit");
+        if (string.IsNullOrEmpty(playerSpawnRoomName) || string.IsNullOrEmpty(primaryGoalRoomName))
+        {
+            Debug.LogWarning("[VillaPCG] Reachability validation skipped because level endpoints are not configured.");
+            return;
+        }
+
+        bool canReachTarget = IsReachable(playerSpawnRoomName, primaryGoalRoomName);
 
         if (!canReachTarget)
-            Debug.LogWarning("[VillaPCG] Invalid map: Player cannot reach target room.");
+            Debug.LogWarning($"[VillaPCG] Invalid map: Player cannot reach {primaryGoalRoomName} from {playerSpawnRoomName}.");
 
-        if (!targetCanReachSafe)
-            Debug.LogWarning("[VillaPCG] Invalid map: Target cannot reach safe room.");
+        bool secondaryReachable = true;
+        if (!string.IsNullOrEmpty(secondaryGoalRoomName))
+        {
+            secondaryReachable = IsReachable(primaryGoalRoomName, secondaryGoalRoomName);
 
-        if (canReachTarget && targetCanReachSafe)
-            Debug.Log("[VillaPCG] Reachability validation passed.");
+            if (!secondaryReachable)
+                Debug.LogWarning($"[VillaPCG] Invalid map: {primaryGoalRoomName} cannot reach {secondaryGoalRoomName}.");
+        }
+
+        if (canReachTarget && secondaryReachable)
+            Debug.Log($"[VillaPCG] Level {currentLevel} reachability validation passed.");
     }
 
     bool IsReachable(string start, string goal)
     {
+        if (!roomGraph.ContainsKey(start) || !roomGraph.ContainsKey(goal))
+            return false;
+
         Queue<string> q = new Queue<string>();
         HashSet<string> visited = new HashSet<string>();
 
@@ -479,7 +649,7 @@ public class VillaPCG_v1 : MonoBehaviour
 
             CreateWalls(r);
 
-            if (generateCoverObjects)
+            if (generateCoverObjects && ShouldGenerateCoverInRoom(r))
                 CreateRoomCover(r);
 
             if (showRoomLabels)
@@ -504,6 +674,17 @@ public class VillaPCG_v1 : MonoBehaviour
     bool IsRestricted(Room r)
     {
         return r.security == SecurityLevel.Restricted || r.security == SecurityLevel.Critical;
+    }
+
+    bool ShouldGenerateCoverInRoom(Room r)
+    {
+        if (r == levelExitRoom)
+            return false;
+
+        if (r.name == playerSpawnRoomName)
+            return false;
+
+        return true;
     }
 
     void CreateWalls(Room r)
@@ -806,15 +987,166 @@ public class VillaPCG_v1 : MonoBehaviour
         GameObject spawn = new GameObject("PlayerSpawn");
         spawn.transform.parent = transform;
 
-        Room courtyard = rooms.Find(r => r.name == "Courtyard / Entrance");
-        if (courtyard != null)
+        Room spawnRoom = rooms.Find(r => r.name == playerSpawnRoomName);
+        if (spawnRoom != null)
         {
-            spawn.transform.position = new Vector3(courtyard.center.x, 0.5f, courtyard.Bottom + 1.0f);
+            float inset = Mathf.Min(2.0f * layoutScale, spawnRoom.size.y * 0.35f);
+            spawn.transform.position = new Vector3(spawnRoom.center.x, 0.5f, spawnRoom.Bottom + inset);
+            spawn.transform.rotation = Quaternion.identity;
         }
         else
         {
             spawn.transform.position = new Vector3(0, 0.5f, -12);
+            spawn.transform.rotation = Quaternion.identity;
         }
+
+        currentSpawnTransform = spawn.transform;
+    }
+
+    void CreateLevelSpecificObjects()
+    {
+        if (currentLevel < finalPcgLevel && levelExitRoom != null)
+        {
+            CreateLevelExitRoomObjects(levelExitRoom, currentLevel + 1);
+        }
+
+        if (currentLevel >= finalPcgLevel && finalTargetRoom != null)
+        {
+            CreateFinalTargetObject(finalTargetRoom);
+        }
+    }
+
+    void CreateLevelExitRoomObjects(Room exitRoom, int nextLevel)
+    {
+        GameObject root = new GameObject("LevelExit_" + exitRoom.name);
+        root.transform.parent = transform;
+
+        float zInset = Mathf.Min(2.0f * layoutScale, exitRoom.size.y * 0.35f);
+        Vector3 exitPosition = new Vector3(exitRoom.center.x, 0.08f, exitRoom.Top - zInset);
+
+        GameObject pad = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        pad.name = "LevelExit_InteractPad";
+        pad.transform.parent = root.transform;
+        pad.transform.position = exitPosition;
+        pad.transform.localScale = new Vector3(3.0f, 0.12f, 3.0f);
+        ApplyMaterial(pad, exitMat);
+
+        BoxCollider padCollider = pad.GetComponent<BoxCollider>();
+        if (padCollider != null)
+            padCollider.isTrigger = true;
+
+        LevelExit exit = pad.AddComponent<LevelExit>();
+        exit.levelManager = this;
+        exit.targetLevel = nextLevel;
+        exit.interactKey = levelAdvanceKey;
+        exit.interactRadius = exitInteractRadius;
+        exit.playerTag = playerTag;
+        exit.prompt = $"Press {levelAdvanceKey} to enter Level {nextLevel}";
+
+        GameObject terminal = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        terminal.name = "LevelExit_Terminal";
+        terminal.transform.parent = root.transform;
+        terminal.transform.position = new Vector3(exitRoom.center.x, 0.75f, exitRoom.Top - 0.45f);
+        terminal.transform.localScale = new Vector3(1.4f, 1.25f, 0.25f);
+        ApplyMaterial(terminal, exitMat);
+        RemoveCollider(terminal);
+
+        GameObject label = new GameObject("LevelExit_Label");
+        label.transform.parent = root.transform;
+        label.transform.position = exitPosition + new Vector3(0f, 0.08f, -1.9f);
+        label.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+        TextMesh text = label.AddComponent<TextMesh>();
+        text.text = $"LEVEL EXIT\nPRESS {levelAdvanceKey}";
+        text.characterSize = 0.35f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = Color.black;
+    }
+
+    void CreateFinalTargetObject(Room targetRoom)
+    {
+        GameObject target = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        target.name = "Final_Assassination_Target";
+        target.transform.parent = transform;
+        target.transform.position = new Vector3(targetRoom.center.x, 1.0f, targetRoom.center.y);
+        target.transform.localScale = new Vector3(0.8f, 1.0f, 0.8f);
+        target.layer = GetLayerSafe(unwalkableLayerName);
+        ApplyMaterial(target, targetMat);
+
+        GameObject label = new GameObject("Label_Final_Assassination_Target");
+        label.transform.parent = transform;
+        label.transform.position = target.transform.position + Vector3.up * 1.6f;
+        label.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+        TextMesh text = label.AddComponent<TextMesh>();
+        text.text = "FINAL TARGET";
+        text.characterSize = 0.45f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = Color.red;
+    }
+
+    void ApplyMaterial(GameObject go, Material mat)
+    {
+        Renderer renderer = go.GetComponent<Renderer>();
+        if (renderer != null && mat != null)
+            renderer.material = mat;
+    }
+
+    void RemoveCollider(GameObject go)
+    {
+        Collider collider = go.GetComponent<Collider>();
+        if (collider == null)
+            return;
+
+        collider.enabled = false;
+
+        if (Application.isPlaying)
+            Destroy(collider);
+        else
+            DestroyImmediate(collider);
+    }
+
+    void TeleportPlayerToSpawn()
+    {
+        if (currentSpawnTransform == null)
+            return;
+
+        CharacterController controller = Object.FindFirstObjectByType<CharacterController>();
+        Transform playerTransform = controller != null ? controller.transform : FindPlayerTransform();
+
+        if (playerTransform == null)
+        {
+            Debug.LogWarning("[VillaPCG] Player was not found; level spawn teleport skipped.");
+            return;
+        }
+
+        bool controllerWasEnabled = controller != null && controller.enabled;
+        if (controller != null)
+            controller.enabled = false;
+
+        Transform playerRoot = playerTransform.root;
+        Vector3 delta = currentSpawnTransform.position - playerTransform.position;
+        playerRoot.position += delta;
+        playerTransform.rotation = currentSpawnTransform.rotation;
+
+        if (controller != null)
+            controller.enabled = controllerWasEnabled;
+
+        ThirdPersonController thirdPersonController = playerTransform.GetComponent<ThirdPersonController>();
+        if (thirdPersonController != null)
+            thirdPersonController.ResetCameraRotation(currentSpawnTransform.rotation.eulerAngles.y);
+
+        RespawnPlayer respawnPlayer = playerTransform.GetComponent<RespawnPlayer>();
+        if (respawnPlayer != null)
+            respawnPlayer.SetRespawnPoint(playerTransform.position, playerTransform.rotation);
+    }
+
+    Transform FindPlayerTransform()
+    {
+        GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
+        return playerObject != null ? playerObject.transform : null;
     }
 
     void OnDrawGizmos()
