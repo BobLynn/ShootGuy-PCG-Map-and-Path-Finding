@@ -1,5 +1,7 @@
 # ShootGuy PCG Map and Path Finding
 
+合作 repo：Shoot-Guy-Guard-and-Target-AI-Systems-for-Hitman-Style-Gameplay
+
 這是《AI for Games》期末專案的 Unity 專案，目前包含：
 
 * PCG 地圖生成
