@@ -9,6 +9,8 @@ public class BulletPool : MonoBehaviour
 
     [Header("Pool Settings")]
     public GameObject bulletPrefab;
+    public GameObject coinPrefab;
+    public GameObject explosionPrefab;
     public int initialPoolSize = 20; // 一開始準備幾顆子彈
 
     // 存放子彈的佇列 (Queue 適合先進先出)
@@ -24,6 +26,8 @@ public class BulletPool : MonoBehaviour
         for (int i = 0; i < initialPoolSize; i++)
         {
             CreateNewBullet();
+            CreateNewCoin();
+            CreateNewExplosion();
         }
     }
 
@@ -35,7 +39,20 @@ public class BulletPool : MonoBehaviour
         pool.Enqueue(obj);
         return obj;
     }
-
+    private GameObject CreateNewCoin()
+    {
+        GameObject obj = Instantiate(coinPrefab, transform);
+        obj.SetActive(false);
+        pool.Enqueue(obj);
+        return obj;
+    }
+    private GameObject CreateNewExplosion()
+    {        
+        GameObject obj = Instantiate(explosionPrefab, transform);
+        obj.SetActive(false);
+        pool.Enqueue(obj);
+        return obj;
+    }
     /// <summary>
     /// 跟池子借一顆子彈
     /// </summary>
@@ -63,6 +80,46 @@ public class BulletPool : MonoBehaviour
 
         return bullet;
     }
+    public GameObject GetCoin(Vector3 position, Quaternion rotation)
+    {
+        GameObject coin;
+
+        if (pool.Count > 0)
+        {
+            coin = pool.Dequeue();
+        }
+        else
+        {
+            coin = CreateNewCoin();
+            pool.Dequeue();
+        }
+
+        coin.transform.position = position;
+        coin.transform.rotation = rotation;
+        coin.SetActive(true);
+
+        return coin;
+    }
+    public GameObject GetExplosion(Vector3 position, Quaternion rotation)
+    {
+        GameObject explosion;
+
+        if (pool.Count > 0)
+        {
+            explosion = pool.Dequeue();
+        }
+        else
+        {
+            explosion = CreateNewExplosion();
+            pool.Dequeue();
+        }
+
+        explosion.transform.position = position;
+        explosion.transform.rotation = rotation;
+        explosion.SetActive(true);
+
+        return explosion;
+    }
 
     /// <summary>
     /// 把子彈還給池子
@@ -71,5 +128,15 @@ public class BulletPool : MonoBehaviour
     {
         bullet.SetActive(false); // 隱藏子彈
         pool.Enqueue(bullet);    // 塞回佇列末端
+    }
+    public void ReturnCoin(GameObject coin)
+    {
+        coin.SetActive(false);
+        pool.Enqueue(coin);
+    }
+    public void ReturnExplosion(GameObject explosion)
+    {
+        explosion.SetActive(false);
+        pool.Enqueue(explosion);
     }
 }
