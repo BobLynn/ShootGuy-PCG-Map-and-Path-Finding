@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PCG_Villa_v3</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111315;
+      --panel: #1b1f22;
+      --panel-2: #242a2d;
+      --line: #3b4448;
+      --text: #ecf0ec;
+      --muted: #a7b0aa;
+      --accent: #e0b45c;
+      --green: #78a765;
+      --danger: #c86d55;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    main {
+      min-width: 0;
+      padding: 24px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .control {
+      display: grid;
+      gap: 8px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+    }
+
+    input,
+    select {
+      padding: 0 12px;
+    }
+
+    input[type="range"] {
+      padding: 0;
+      accent-color: var(--accent);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 720;
+      background: #d9a84d;
+      color: #16140f;
+      border-color: #e7bf6c;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #15191b;
+      padding: 12px;
+      min-height: 72px;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 22px;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend {
+      display: grid;
+      gap: 9px;
+      margin-top: auto;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,.18);
+      flex: 0 0 auto;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 44px;
+    }
+
+    .toolbar h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 740;
+    }
+
+    .toolbar p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .canvas-wrap {
+      min-height: 520px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+        #0d0f10;
+      background-size: 24px 24px;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 520px;
+    }
+
+    .note {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      padding: 8px 10px;
+      background: rgba(13, 15, 16, .78);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    @media (max-width: 860px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      main {
+        padding: 16px;
+      }
+
+      .toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .canvas-wrap,
+      canvas {
+        min-height: 460px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <header>
+        <h1>PCG_Villa_v3</h1>
+        <p class="subtitle">單層別墅平面生成測試：房間以共享牆面緊密拼接，牆面缺口表示可通過位置。</p>
+      </header>
+
+      <div class="control">
+        <label for="seed">Seed</label>
+        <input id="seed" value="villa-v3-2026" autocomplete="off">
+      </div>
+
+      <div class="control">
+        <label for="complexity">複雜度 <span id="complexityValue">76</span></label>
+        <input id="complexity" type="range" min="40" max="100" value="76">
+      </div>
+
+      <div class="control">
+        <label for="style">配置風格</label>
+        <select id="style">
+          <option value="garden">花園平面</option>
+          <option value="courtyard">中庭環繞</option>
+          <option value="resort">泳池莊園</option>
+        </select>
+      </div>
+
+      <button id="generate">重新生成</button>
+      <button id="randomize" class="secondary">隨機 Seed</button>
+
+      <section class="stats" aria-label="map stats">
+        <div class="stat"><b id="roomCount">0</b><span>房間 / 區域</span></div>
+        <div class="stat"><b id="adjacencyCount">0</b><span>相鄰連接</span></div>
+        <div class="stat"><b id="extraAdjacencyCount">0</b><span>額外相鄰</span></div>
+        <div class="stat"><b id="openingCount">0</b><span>牆面缺口</span></div>
+      </section>
+
+      <section class="legend" aria-label="legend">
+        <div class="legend-row"><i class="swatch" style="background:#cfa65a"></i>主要生活空間</div>
+        <div class="legend-row"><i class="swatch" style="background:#8e7356"></i>私人房間</div>
+        <div class="legend-row"><i class="swatch" style="background:#677b84"></i>服務 / 機能區</div>
+        <div class="legend-row"><i class="swatch" style="background:#0d0f10;border-color:#d8ddcf"></i>牆面缺口 / 可通過</div>
+      </section>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <div>
+          <h2 id="mapTitle">Villa v3 單層平面</h2>
+          <p id="mapMeta">Seed villa-v3-2026</p>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="map" width="1400" height="900"></canvas>
+        <div class="note">點擊重新生成或改 seed 檢查 PCG 結果</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("map");
+    const ctx = canvas.getContext("2d");
+    const seedInput = document.getElementById("seed");
+    const complexityInput = document.getElementById("complexity");
+    const complexityValue = document.getElementById("complexityValue");
+    const styleSelect = document.getElementById("style");
+    const roomCount = document.getElementById("roomCount");
+    const adjacencyCount = document.getElementById("adjacencyCount");
+    const extraAdjacencyCount = document.getElementById("extraAdjacencyCount");
+    const openingCount = document.getElementById("openingCount");
+    const mapTitle = document.getElementById("mapTitle");
+    const mapMeta = document.getElementById("mapMeta");
+
+    const roomNames = [
+      "Grand Salon", "Tea Room", "Library", "Gallery", "Dining Hall", "Kitchen",
+      "Wine Room", "Spa", "Gym", "Master Suite", "Guest Suite", "Study",
+      "Bath", "Laundry", "Staff Room", "Storage", "Pool Lounge", "Pantry",
+      "Media Den", "Conservatory", "Workshop", "Observatory", "Veranda"
+    ];
+
+    function hashString(value) {
+      let h = 2166136261;
+      for (let i = 0; i < value.length; i++) {
+        h ^= value.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+
+    function mulberry32(seed) {
+      return function random() {
+        seed |= 0;
+        seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function pick(rng, arr) {
+      return arr[Math.floor(rng() * arr.length)];
+    }
+
+    function rectsInteriorOverlap(a, b) {
+      return a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y;
+    }
+
+    function gridRoomToPixels(room, grid) {
+      return {
+        ...room,
+        x: grid.originX + room.gx * grid.unit,
+        y: grid.originY + room.gy * grid.unit,
+        w: room.gw * grid.unit,
+        h: room.gh * grid.unit
+      };
+    }
+
+    function gridOverlap(a, b) {
+      return a.gx < b.gx + b.gw &&
+        a.gx + a.gw > b.gx &&
+        a.gy < b.gy + b.gh &&
+        a.gy + a.gh > b.gy;
+    }
+
+    function gridTouch(a, b) {
+      const verticalSpan = Math.min(a.gy + a.gh, b.gy + b.gh) - Math.max(a.gy, b.gy);
+      const horizontalSpan = Math.min(a.gx + a.gw, b.gx + b.gw) - Math.max(a.gx, b.gx);
+      const horizontalTouch = (a.gx + a.gw === b.gx || b.gx + b.gw === a.gx) && verticalSpan >= 2;
+      const verticalTouch = (a.gy + a.gh === b.gy || b.gy + b.gh === a.gy) && horizontalSpan >= 2;
+      return horizontalTouch || verticalTouch;
+    }
+
+    function sharedWallOnSide(room, other, side) {
+      if (side === "east" && room.gx + room.gw === other.gx) {
+        const y1 = Math.max(room.y, other.y);
+        const y2 = Math.min(room.y + room.h, other.y + other.h);
+        return y2 > y1 ? { axis: "v", x: room.x + room.w, y1, y2, length: y2 - y1 } : null;
+      }
+      if (side === "west" && room.gx === other.gx + other.gw) {
+        const y1 = Math.max(room.y, other.y);
+        const y2 = Math.min(room.y + room.h, other.y + other.h);
+        return y2 > y1 ? { axis: "v", x: room.x, y1, y2, length: y2 - y1 } : null;
+      }
+      if (side === "south" && room.gy + room.gh === other.gy) {
+        const x1 = Math.max(room.x, other.x);
+        const x2 = Math.min(room.x + room.w, other.x + other.w);
+        return x2 > x1 ? { axis: "h", y: room.y + room.h, x1, x2, length: x2 - x1 } : null;
+      }
+      if (side === "north" && room.gy === other.gy + other.gh) {
+        const x1 = Math.max(room.x, other.x);
+        const x2 = Math.min(room.x + room.w, other.x + other.w);
+        return x2 > x1 ? { axis: "h", y: room.y, x1, x2, length: x2 - x1 } : null;
+      }
+      return null;
+    }
+
+    function openingForWall(wall) {
+      const gap = Math.min(Math.max(34, wall.length * 0.42), Math.max(24, wall.length - 18));
+      if (wall.axis === "v") {
+        const mid = (wall.y1 + wall.y2) / 2;
+        return { start: mid - gap / 2, end: mid + gap / 2 };
+      }
+      const mid = (wall.x1 + wall.x2) / 2;
+      return { start: mid - gap / 2, end: mid + gap / 2 };
+    }
+
+    function drawSplitLine(axis, fixed, start, end, openings, width, color) {
+      const normalized = openings
+        .map(opening => ({
+          start: Math.max(start, opening.start),
+          end: Math.min(end, opening.end)
+        }))
+        .filter(opening => opening.end - opening.start > 4)
+        .sort((a, b) => a.start - b.start);
+
+      ctx.save();
+      ctx.lineCap = "butt";
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      let cursor = start;
+      normalized.forEach(opening => {
+        if (opening.start > cursor) {
+          ctx.beginPath();
+          if (axis === "v") {
+            ctx.moveTo(fixed, cursor);
+            ctx.lineTo(fixed, opening.start);
+          } else {
+            ctx.moveTo(cursor, fixed);
+            ctx.lineTo(opening.start, fixed);
+          }
+          ctx.stroke();
+        }
+        cursor = Math.max(cursor, opening.end);
+      });
+      if (cursor < end) {
+        ctx.beginPath();
+        if (axis === "v") {
+          ctx.moveTo(fixed, cursor);
+          ctx.lineTo(fixed, end);
+        } else {
+          ctx.moveTo(cursor, fixed);
+          ctx.lineTo(end, fixed);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function generateLayout(seed, complexity, style) {
+      const rng = mulberry32(hashString(`${seed}:${complexity}:${style}`));
+      const grid = { unit: 30, cols: 40, rows: 26, originX: 100, originY: 60 };
+      const gridRooms = [];
+      const connections = [];
+      const W = canvas.width;
+      const H = canvas.height;
+      const targetRooms = Math.round(18 + complexity * 0.22);
+
+      gridRooms.push({
+        id: "core",
+        name: style === "courtyard" ? "Courtyard Arcade" : "Grand Salon",
+        type: "public",
+        gx: 14,
+        gy: 9,
+        gw: style === "courtyard" ? 10 : 12,
+        gh: style === "resort" ? 7 : 8,
+        floor: 1
+      });
+
+      const sides = ["north", "east", "south", "west"];
+      const roomTypes = ["public", "private", "private", "service"];
+
+      for (let attempt = 0; gridRooms.length < targetRooms && attempt < targetRooms * 70; attempt++) {
+        const parent = pick(rng, gridRooms);
+        const side = pick(rng, sides);
+        const type = pick(rng, roomTypes);
+        const sizeBias = type === "public" ? 1.2 : type === "service" ? 0.78 : 1;
+        const gw = Math.max(2, Math.round((2 + rng() * 4.6) * sizeBias));
+        const gh = Math.max(2, Math.round((2 + rng() * 3.8) * sizeBias));
+        let minOffset;
+        let maxOffset;
+        let gx;
+        let gy;
+
+        if (side === "north" || side === "south") {
+          minOffset = -gw + 2;
+          maxOffset = parent.gw - 2;
+          gx = parent.gx + Math.floor(minOffset + rng() * (maxOffset - minOffset + 1));
+          gy = side === "north" ? parent.gy - gh : parent.gy + parent.gh;
+        } else {
+          minOffset = -gh + 2;
+          maxOffset = parent.gh - 2;
+          gx = side === "west" ? parent.gx - gw : parent.gx + parent.gw;
+          gy = parent.gy + Math.floor(minOffset + rng() * (maxOffset - minOffset + 1));
+        }
+
+        const room = {
+          id: `r${gridRooms.length}`,
+          name: pick(rng, roomNames),
+          type,
+          gx,
+          gy,
+          gw,
+          gh,
+          floor: 1
+        };
+
+        if (room.gx < 1 || room.gy < 1 || room.gx + room.gw > grid.cols - 1 || room.gy + room.gh > grid.rows - 1) {
+          continue;
+        }
+        if (gridRooms.some(existing => gridOverlap(room, existing))) {
+          continue;
+        }
+        if (!gridTouch(room, parent)) {
+          continue;
+        }
+
+        gridRooms.push(room);
+        connections.push({ a: parent.id, b: room.id, kind: "shared-wall" });
+      }
+
+      for (let i = 0; i < gridRooms.length; i++) {
+        for (let j = i + 1; j < gridRooms.length; j++) {
+          const a = gridRooms[i];
+          const b = gridRooms[j];
+          if (!gridTouch(a, b)) continue;
+          if (!connections.some(edge => (edge.a === a.id && edge.b === b.id) || (edge.a === b.id && edge.b === a.id))) {
+            connections.push({ a: a.id, b: b.id, kind: "extra-adjacent" });
+          }
+        }
+      }
+
+      const rooms = gridRooms.map(room => gridRoomToPixels(room, grid));
+      const bounds = rooms.reduce((box, room) => ({
+        minX: Math.min(box.minX, room.x),
+        minY: Math.min(box.minY, room.y),
+        maxX: Math.max(box.maxX, room.x + room.w),
+        maxY: Math.max(box.maxY, room.y + room.h)
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+      const dx = (W - (bounds.maxX - bounds.minX)) / 2 - bounds.minX;
+      const dy = (H - (bounds.maxY - bounds.minY)) / 2 - bounds.minY;
+      rooms.forEach(room => {
+        room.x += dx;
+        room.y += dy;
+      });
+
+      return { rooms, connections, rng };
+    }
+
+    function drawRoundedRect(x, y, w, h, r) {
+      const radius = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + w, y, x + w, y + h, radius);
+      ctx.arcTo(x + w, y + h, x, y + h, radius);
+      ctx.arcTo(x, y + h, x, y, radius);
+      ctx.arcTo(x, y, x + w, y, radius);
+      ctx.closePath();
+    }
+
+    function drawRoom(room) {
+      const palette = {
+        public: ["#cfa65a", "#96723a"],
+        private: ["#9b8266", "#6c533d"],
+        service: ["#718790", "#4e646d"]
+      };
+      const colors = palette[room.type];
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(room.x, room.y, room.w, room.h);
+      const gradient = ctx.createLinearGradient(room.x, room.y, room.x + room.w, room.y + room.h);
+      gradient.addColorStop(0, colors[0]);
+      gradient.addColorStop(1, colors[1]);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(220, 225, 215, .25)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(room.x + 2, room.y + 2, room.w - 4, room.h - 4);
+
+      ctx.fillStyle = "rgba(16, 15, 13, .78)";
+      ctx.font = room.w < 118 ? "11px Inter, sans-serif" : "13px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const label = room.w < 120 ? room.name.split(" ")[0] : room.name;
+      ctx.fillText(label, room.x + room.w / 2, room.y + room.h / 2);
+      ctx.restore();
+    }
+
+    function drawWallOpenings(rooms, connections) {
+      const roomById = new Map(rooms.map(room => [room.id, room]));
+      const neighbors = new Map(rooms.map(room => [room.id, []]));
+      connections.forEach(edge => {
+        const a = roomById.get(edge.a);
+        const b = roomById.get(edge.b);
+        if (!a || !b) return;
+        neighbors.get(a.id).push(b);
+        neighbors.get(b.id).push(a);
+      });
+
+      rooms.forEach(room => {
+        [
+          { side: "north", axis: "h", fixed: room.y, start: room.x, end: room.x + room.w },
+          { side: "south", axis: "h", fixed: room.y + room.h, start: room.x, end: room.x + room.w },
+          { side: "west", axis: "v", fixed: room.x, start: room.y, end: room.y + room.h },
+          { side: "east", axis: "v", fixed: room.x + room.w, start: room.y, end: room.y + room.h }
+        ].forEach(edge => {
+          const openings = neighbors.get(room.id)
+            .map(other => sharedWallOnSide(room, other, edge.side))
+            .filter(Boolean)
+            .map(openingForWall);
+
+          drawSplitLine(edge.axis, edge.fixed, edge.start, edge.end, openings, room.id === "core" ? 8 : 6, "rgba(34, 39, 40, .96)");
+          drawSplitLine(edge.axis, edge.fixed, edge.start, edge.end, openings, 1.5, "rgba(218, 225, 215, .55)");
+        });
+      });
+    }
+
+    function drawPerimeter(rooms) {
+      const bounds = rooms.reduce((box, room) => ({
+        minX: Math.min(box.minX, room.x),
+        minY: Math.min(box.minY, room.y),
+        maxX: Math.max(box.maxX, room.x + room.w),
+        maxY: Math.max(box.maxY, room.y + room.h)
+      }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(224, 180, 92, .24)";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([14, 10]);
+      drawRoundedRect(bounds.minX - 34, bounds.minY - 34, bounds.maxX - bounds.minX + 68, bounds.maxY - bounds.minY + 68, 28);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function render() {
+      const seed = seedInput.value.trim() || "villa-v3";
+      const complexity = Number(complexityInput.value);
+      const style = styleSelect.value;
+      complexityValue.textContent = complexity;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#0d0f10";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let x = 0; x < canvas.width; x += 50) {
+        ctx.strokeStyle = x % 200 === 0 ? "rgba(255,255,255,.075)" : "rgba(255,255,255,.035)";
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 50) {
+        ctx.strokeStyle = y % 200 === 0 ? "rgba(255,255,255,.075)" : "rgba(255,255,255,.035)";
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      const layout = generateLayout(seed, complexity, style);
+      let overlapCount = 0;
+      for (let i = 0; i < layout.rooms.length; i++) {
+        for (let j = i + 1; j < layout.rooms.length; j++) {
+          if (rectsInteriorOverlap(layout.rooms[i], layout.rooms[j])) overlapCount++;
+        }
+      }
+      const connected = new Set(["core"]);
+      const pending = ["core"];
+      while (pending.length) {
+        const id = pending.pop();
+        layout.connections.forEach(edge => {
+          const next = edge.a === id ? edge.b : edge.b === id ? edge.a : null;
+          if (next && !connected.has(next)) {
+            connected.add(next);
+            pending.push(next);
+          }
+        });
+      }
+
+      drawPerimeter(layout.rooms);
+      layout.rooms.forEach(drawRoom);
+      drawWallOpenings(layout.rooms, layout.connections);
+
+      const extraAdjacency = layout.connections.filter(edge => edge.kind === "extra-adjacent").length;
+      roomCount.textContent = layout.rooms.length;
+      adjacencyCount.textContent = layout.connections.length;
+      extraAdjacencyCount.textContent = extraAdjacency;
+      openingCount.textContent = layout.connections.length;
+      mapTitle.textContent = `Villa v3 單層平面 / ${styleSelect.options[styleSelect.selectedIndex].text}`;
+      mapMeta.textContent = `Seed ${seed} · Complexity ${complexity} · 1F only · ${layout.rooms.length} zones`;
+      canvas.dataset.rooms = String(layout.rooms.length);
+      canvas.dataset.adjacencies = String(layout.connections.length);
+      canvas.dataset.extraAdjacencies = String(extraAdjacency);
+      canvas.dataset.openings = String(layout.connections.length);
+      canvas.dataset.features = "0";
+      canvas.dataset.overlaps = String(overlapCount);
+      canvas.dataset.connected = String(connected.size === layout.rooms.length);
+      canvas.dataset.floors = "1";
+    }
+
+    document.getElementById("generate").addEventListener("click", render);
+    document.getElementById("randomize").addEventListener("click", () => {
+      seedInput.value = `villa-v3-${Math.random().toString(36).slice(2, 8)}`;
+      render();
+    });
+    seedInput.addEventListener("change", render);
+    complexityInput.addEventListener("input", render);
+    styleSelect.addEventListener("change", render);
+
+    seedInput.value = "villa-v3-2026";
+    complexityInput.value = "76";
+    styleSelect.value = "garden";
+    render();
+  </script>
+</body>
+</html>
