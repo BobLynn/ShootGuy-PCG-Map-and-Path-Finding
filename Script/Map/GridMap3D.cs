@@ -22,9 +22,13 @@ public class GridNode
 public class GridMap3D : MonoBehaviour
 {
     [Header("Grid Settings")]
+    public Vector3 gridCenter = Vector3.zero;
     public float width = 50f;
     public float length = 50f;
     public float cellSize = 1f;
+
+    [Header("Generation Mode")]
+    public bool generateOnStart = false;
 
     [Header("Height Settings")]
     public float scanHeight = 50f; // 從多高的地方往下掃描 (要比場景中最高的物件還高)
@@ -36,14 +40,18 @@ public class GridMap3D : MonoBehaviour
     private List<GridNode>[,] grid;
     private int cols, rows;
 
-    private GameObject hitObject;
-
+    // private GameObject hitObject;
+    
     void Start()
     {
-        GenerateGrid();
+        if (generateOnStart)
+        {
+            GenerateGrid();
+        }
     }
 
-    void GenerateGrid()
+    [ContextMenu("Generate Grid Map")]
+    public void GenerateGrid()
     {
         cols = Mathf.FloorToInt(width / cellSize);
         rows = Mathf.FloorToInt(length / cellSize);
@@ -61,10 +69,15 @@ public class GridMap3D : MonoBehaviour
 
                 grid[arrayX, arrayZ] = new List<GridNode>();
                 // 計算射線的起點 (從天上往下)
-                Vector3 rayStart = new Vector3(x * cellSize + cellSize / 2, scanHeight, z * cellSize + cellSize / 2);
+                // Vector3 rayStart = new Vector3(x * cellSize + cellSize / 2, scanHeight, z * cellSize + cellSize / 2);
+                Vector3 rayStart = new Vector3(
+                    gridCenter.x + x * cellSize + cellSize / 2,
+                    scanHeight,
+                    gridCenter.z + z * cellSize + cellSize / 2
+                );
 
                 
-               // ✨ 核心改變：使用 RaycastAll 一次貫穿所有圖層
+                // ✨ 核心改變：使用 RaycastAll 一次貫穿所有圖層
                 RaycastHit[] hits = Physics.RaycastAll(rayStart, Vector3.down, scanHeight + 50f, walkableLayer);
 
                 // 因為 RaycastAll 回傳的陣列是沒有順序的，我們依照 Y 軸高度從高到低排序
@@ -124,8 +137,8 @@ public class GridMap3D : MonoBehaviour
     // 找尋離給定世界座標最近且可行走的節點
     public GridNode GetClosestNode(Vector3 worldPos)
     {
-        int gridX = Mathf.RoundToInt(worldPos.x / cellSize);
-        int gridZ = Mathf.RoundToInt(worldPos.z / cellSize);
+        int gridX = Mathf.RoundToInt((worldPos.x - gridCenter.x) / cellSize);
+        int gridZ = Mathf.RoundToInt((worldPos.z - gridCenter.z) / cellSize);
 
         List<GridNode> nodesAtPos = GetNodesAt(gridX, gridZ);
         if (nodesAtPos == null || nodesAtPos.Count == 0) return null;

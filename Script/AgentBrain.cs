@@ -273,7 +273,7 @@ public class AgentBrain : MonoBehaviour
 
         }
         // 如果正在 ATTACK，且正在瞄準/鎖定/開火 (Phase 0,1,2) -> 絕對不打斷，讓他射完
-        if (currentDecision == AgentDecision.ATTACK && combatPhase < 3)
+        if (currentDecision == AgentDecision.ATTACK && combatPhase >= 1)
         {
             return;
         }
@@ -520,7 +520,9 @@ public class AgentBrain : MonoBehaviour
     // --- Chase 邏輯 ---
     public void StartChase(Transform target, int forceStartPhase = 0)
     {
+
         currentDecision = AgentDecision.CHASE;
+        agent.animator.ResetTrigger("Shoot03");
         agent.animator.SetTrigger("Sprint");
 
         agent.targetObject = target;

@@ -4,6 +4,10 @@ using System.Linq;
 
 public class WaypointGraph3D : MonoBehaviour
 {
+
+    [Header("Generation Mode")]
+    public bool generateOnStart = false;
+
     [Header("Agent Settings")]
     public float agentRadius = 0.5f;
     public float agentHeight = 2.0f;     // Agent 的身高，用來算頭頂空間與視線高度
@@ -28,9 +32,13 @@ public class WaypointGraph3D : MonoBehaviour
 
     void Start()
     {
-        GenerateGraph();
+        if (generateOnStart)
+        {
+            GenerateGraph();
+        }
     }
-
+    
+    [ContextMenu("Generate Waypoint Graph")]
     public void GenerateGraph()
     {
         nodes.Clear();
