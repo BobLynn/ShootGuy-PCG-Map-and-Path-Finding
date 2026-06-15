@@ -705,23 +705,11 @@ namespace InventorySystem
             {
                 if (InventoryController.instance == null) return;
 
-                int currentItemCount = 0;
                 foreach (StartItem item in startingItems)
                 {
                     if (!string.IsNullOrEmpty(item.itemType))
                     {
-                        currentItemCount += InventoryController.instance.CountItems(inventoryName, item.itemType);
-                    }
-                }
-
-                if (currentItemCount == 0)
-                {
-                    foreach (StartItem item in startingItems)
-                    {
-                        if (!string.IsNullOrEmpty(item.itemType))
-                        {
-                            InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, item.amount);
-                        }
+                        InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, item.amount);
                     }
                 }
             }
