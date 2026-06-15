@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using UnityEngine;
 using KevinIglesias;
+using System.Collections; //Required for IEnumerator and Coroutines
 
 [System.Flags]
 public enum AgentState 
@@ -30,6 +30,7 @@ public class Agent : MonoBehaviour
     public AgentState currentState = AgentState.SEEK;
 
     [Header("Agent Stats")]
+    public float health = 100f;
     public float defaultSpeed = 5f;
     public float chaseSpeed = 8f;
     public float maxForce = 10f;
@@ -142,5 +143,85 @@ public class Agent : MonoBehaviour
         // animator.SetTrigger(currentAction.ToString()); // 觸發正確的動作動畫
         // animator.SetTrigger(currentMovement.ToString()); // 觸發正確的移動
 
+    }
+
+    public void TakeDamage(float damage, Vector3 damageSourcePos = default(Vector3))
+    {
+        health -= damage;
+
+        // 如果 damageSourcePos 有傳入有效座標才計算方向
+        bool hasDamageSource = damageSourcePos != default(Vector3);
+
+        if (health > 0f) 
+        {
+            if (hasDamageSource)
+            {
+                // 建議改寫成這樣，利用現有的平滑旋轉系統
+                isTurningInPlace = true;
+                turnTargetPos = damageSourcePos;
+            }
+            
+            // 可以根據受傷方向播放不同的受擊動畫 (Damage01 ~ Damage05) 
+        }
+        else if (health <= 0f)
+        {
+            // 預設為普通的往後倒動畫
+            SoldierAction deathAction = SoldierAction.Death01; 
+
+            if (hasDamageSource)
+            {
+                // 1. 取得從 Agent 指向「傷害來源」的方向向量
+                Vector3 dirToSource = damageSourcePos - transform.position;
+                
+                // 2. 只把 Y 軸歸零，投影到 XZ 水平面 (保留 X 左右 與 Z 前後)
+                dirToSource.y = 0; 
+                
+                // 3. 歸零 Y 軸後，重新單位化 (非常重要，確保向量長度正確)
+                dirToSource = dirToSource.normalized;
+
+                // 計算 Agent 正前方與傷害來源的夾角
+                float hitAngle = Vector3.SignedAngle(transform.forward, dirToSource, Vector3.up);
+                Debug.Log($"{name} was hit from angle: {hitAngle}");
+
+                // 3. 切割成四個 90 度的扇形區域來判斷
+                if (hitAngle >= -45f && hitAngle <= 45f)
+                {
+                    // 傷害來自前方 -> 往後倒
+                    deathAction = SoldierAction.Death02; 
+                }
+                else if (hitAngle > 45f && hitAngle < 135f)
+                {
+                    // 傷害來自右方 -> 往左側倒
+                    deathAction = SoldierAction.Death03; 
+                }
+                else if (hitAngle < -45f && hitAngle > -135f)
+                {
+                    // 傷害來自左方 -> 往右側倒
+                    deathAction = SoldierAction.Death03; 
+                }
+                else
+                {
+                    // 傷害來自後方 (大於 135 或是 小於 -135) -> 往前倒 (撲街)
+                    deathAction = SoldierAction.Death01; 
+                }
+            }
+            
+            // 賦值並執行死亡邏輯
+            currentAction = deathAction;
+            currentState = AgentState.NONE; // 死亡後清空所有行為狀態
+            brain.currentDecision = AgentDecision.LONGREST; // 死亡後進入休息狀態
+            StartCoroutine(DelayDeath()); // 延遲死亡，讓動畫有時間播放完
+        }
+    }
+
+    IEnumerator DelayDeath()
+    {
+        Debug.Log($"{name} death timer started!");
+
+        // Pause execution for 2 seconds
+        yield return new WaitForSeconds(2f);
+
+        gameObject.SetActive(false);
+        Debug.Log($"{name} has died and disabled!");
     }
 }

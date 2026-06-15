@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEngine;
 
 public class BulletPool : MonoBehaviour
@@ -14,7 +13,9 @@ public class BulletPool : MonoBehaviour
     public int initialPoolSize = 20; // 一開始準備幾顆子彈
 
     // 存放子彈的佇列 (Queue 適合先進先出)
-    private Queue<GameObject> pool = new Queue<GameObject>();
+    private Queue<GameObject> bulletPool = new Queue<GameObject>();
+    private Queue<GameObject> coinPool = new Queue<GameObject>();
+    private Queue<GameObject> explosionPool = new Queue<GameObject>();
 
     void Awake()
     {
@@ -27,7 +28,7 @@ public class BulletPool : MonoBehaviour
         {
             CreateNewBullet();
             CreateNewCoin();
-            CreateNewExplosion();
+            // CreateNewExplosion();
         }
     }
 
@@ -36,21 +37,21 @@ public class BulletPool : MonoBehaviour
         // 生成子彈，並把 BulletPoolManager 當作它的父物件 (保持 Hierarchy 乾淨)
         GameObject obj = Instantiate(bulletPrefab, transform);
         obj.SetActive(false); // 先隱藏
-        pool.Enqueue(obj);
+        bulletPool.Enqueue(obj);
         return obj;
     }
     private GameObject CreateNewCoin()
     {
         GameObject obj = Instantiate(coinPrefab, transform);
         obj.SetActive(false);
-        pool.Enqueue(obj);
+        coinPool.Enqueue(obj);
         return obj;
     }
     private GameObject CreateNewExplosion()
     {        
         GameObject obj = Instantiate(explosionPrefab, transform);
         obj.SetActive(false);
-        pool.Enqueue(obj);
+        explosionPool.Enqueue(obj);
         return obj;
     }
     /// <summary>
@@ -61,14 +62,14 @@ public class BulletPool : MonoBehaviour
         GameObject bullet;
 
         // 如果池子裡還有子彈，就拿出來；如果沒有了(例如射速太快)，就臨時生一顆
-        if (pool.Count > 0)
+        if (bulletPool.Count > 0)
         {
-            bullet = pool.Dequeue();
+            bullet = bulletPool.Dequeue();
         }
         else
         {
             bullet = CreateNewBullet();
-            pool.Dequeue(); // 因為 CreateNewBullet 會把它加進 Queue，所以要立刻拿出來
+            bulletPool.Dequeue(); // 因為 CreateNewBullet 會把它加進 Queue，所以要立刻拿出來
         }
 
         // 設定位置與旋轉，並啟動它
@@ -76,7 +77,7 @@ public class BulletPool : MonoBehaviour
         bullet.transform.rotation = rotation;
         bullet.SetActive(true);
 
-        UnityEngine.Debug.Log($"BulletPool: 提供了一顆子彈，目前池子裡還有 {pool.Count} 顆");
+        UnityEngine.Debug.Log($"BulletPool: 提供了一顆子彈，目前池子裡還有 {bulletPool.Count} 顆");
 
         return bullet;
     }
@@ -84,40 +85,42 @@ public class BulletPool : MonoBehaviour
     {
         GameObject coin;
 
-        if (pool.Count > 0)
+        if (coinPool.Count > 0)
         {
-            coin = pool.Dequeue();
+            coin = coinPool.Dequeue();
         }
         else
         {
             coin = CreateNewCoin();
-            pool.Dequeue();
+            coinPool.Dequeue();
         }
 
         coin.transform.position = position;
         coin.transform.rotation = rotation;
         coin.SetActive(true);
 
+        UnityEngine.Debug.Log($"CoinPool: 提供了一顆金幣，目前池子裡還有 {coinPool.Count} 顆");
         return coin;
     }
     public GameObject GetExplosion(Vector3 position, Quaternion rotation)
     {
         GameObject explosion;
 
-        if (pool.Count > 0)
+        if (explosionPool.Count > 0)
         {
-            explosion = pool.Dequeue();
+            explosion = explosionPool.Dequeue();
         }
         else
         {
             explosion = CreateNewExplosion();
-            pool.Dequeue();
+            explosionPool.Dequeue();
         }
 
         explosion.transform.position = position;
         explosion.transform.rotation = rotation;
         explosion.SetActive(true);
 
+        UnityEngine.Debug.Log($"ExplosionPool: 提供了一個爆炸特效，目前池子裡還有 {explosionPool.Count} 個");
         return explosion;
     }
 
@@ -127,16 +130,16 @@ public class BulletPool : MonoBehaviour
     public void ReturnBullet(GameObject bullet)
     {
         bullet.SetActive(false); // 隱藏子彈
-        pool.Enqueue(bullet);    // 塞回佇列末端
+        bulletPool.Enqueue(bullet);    // 塞回佇列末端
     }
     public void ReturnCoin(GameObject coin)
     {
         coin.SetActive(false);
-        pool.Enqueue(coin);
+        coinPool.Enqueue(coin);
     }
     public void ReturnExplosion(GameObject explosion)
     {
         explosion.SetActive(false);
-        pool.Enqueue(explosion);
+        explosionPool.Enqueue(explosion);
     }
 }

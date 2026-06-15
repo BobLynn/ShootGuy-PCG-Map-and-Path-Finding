@@ -68,6 +68,12 @@ public class SimpleProjectile : MonoBehaviour
             // other.GetComponent<PlayerHealth>().TakeDamage(damage);
             DisableAndReturn(); // 擊中玩家，回收
         }
+        else if (other.CompareTag("Enemy"))
+        {
+            UnityEngine.Debug.Log("Hit Enemy!");
+            other.GetComponent<Agent>().TakeDamage(damage, transform.position); // 傳入子彈位置讓敵人知道從哪裡被打到的
+            DisableAndReturn(); // 擊中敵人，回收
+        }
     }
 
     // 負責將子彈狀態重置並還給 Pool
