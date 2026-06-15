@@ -1,4 +1,4 @@
-﻿ using UnityEngine;
+ using UnityEngine;
 #if ENABLE_INPUT_SYSTEM 
 using UnityEngine.InputSystem;
 #endif
@@ -28,6 +28,12 @@ namespace StarterAssets
         [Tooltip("Acceleration and deceleration")]
         public float SpeedChangeRate = 10.0f;
 
+        [Tooltip("Additional sensitivity for mouse/trackpad look")]
+        public float Sensitivity = 1.0f; // Start at 1.0f and adjust in Inspector
+
+        public AudioSource AudioFootsteps;
+        public AudioSource LandingAudio;
+        public AudioSource AudioFoley;
         public AudioClip LandingAudioClip;
         public AudioClip[] FootstepAudioClips;
         [Range(0, 1)] public float FootstepAudioVolume = 0.5f;
@@ -225,9 +231,9 @@ public bool IsRespawning { get; set; } = false;
     {
         float deltaTimeMultiplier = IsCurrentDeviceMouse ? 1.0f : Time.deltaTime;
 
-        _cinemachineTargetYaw += _input.look.x * deltaTimeMultiplier * LookSensitivity.x;
-        _cinemachineTargetPitch += _input.look.y * deltaTimeMultiplier * LookSensitivity.y;
-    }
+                _cinemachineTargetYaw += _input.look.x * deltaTimeMultiplier * Sensitivity;
+                _cinemachineTargetPitch -= _input.look.y * deltaTimeMultiplier * Sensitivity;
+            }
 
     _cinemachineTargetYaw = ClampAngle(_cinemachineTargetYaw, float.MinValue, float.MaxValue);
     _cinemachineTargetPitch = ClampAngle(_cinemachineTargetPitch, BottomClamp, TopClamp);
