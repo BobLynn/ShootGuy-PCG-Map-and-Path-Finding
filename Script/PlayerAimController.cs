@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Cinemachine;
 using UnityEngine.InputSystem;
+using InventorySystem;
 
 
 public class PlayerAimController : MonoBehaviour
@@ -25,10 +26,10 @@ public class PlayerAimController : MonoBehaviour
     [Tooltip("Drag the Gun GameObject that is parented under the Right Hand bone here.")]
     [SerializeField] private GameObject weaponProp;
     public Transform shootPoint; // 子彈發射點，通常是槍口位置
-    
+
     private double cooldownTimerBullet = 0; // 用來控制射擊頻率的計時器
-    
-    [Header("Coin Settings")]  
+
+    [Header("Coin Settings")]
     public double tossForce = 10.0; // 硬幣丟出的初始力道
     private double cooldownTimerCoin = 0; // 用來控制丟硬幣頻率的計時器
 
@@ -129,7 +130,7 @@ public class PlayerAimController : MonoBehaviour
             if (player.currentEquipment == Player.EquipmentType.Gun && cooldownTimerBullet <= 0)
             {
                 cooldownTimerBullet = cooldown; // 重置冷卻計時器
-                
+
                 //計算子彈髮色方向， 從攝影機的中心店發射ray， 如果有擊中物體就朝那個方向發射子彈， 沒有就朝攝影機的forward方向發射
                 RaycastHit hit;
                 if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out hit, 100f))
@@ -147,7 +148,7 @@ public class PlayerAimController : MonoBehaviour
                 cooldownTimerCoin = cooldown; // 重置冷卻計時器
                 RaycastHit hit;
                 if (Physics.Raycast(cameraTransform.position, cameraTransform.forward, out hit, 100f))
-                {                     
+                {
                     Vector3 shootDirection = (hit.point - shootPoint.position).normalized;
                     TossCoin(shootDirection);
                 }
@@ -168,27 +169,30 @@ public class PlayerAimController : MonoBehaviour
             cooldownTimerCoin -= Time.deltaTime;
             // Debug.Log($"{player.playerName} Cooldown Timer: {cooldownTimerCoin:F2} seconds remaining");
         }
-        
+
     }
     private void ShootBullet(Vector3 direction)
     {
-        if (animator != null){
+        if (animator != null)
+        {
             animator.SetTrigger("Shoot");
         }
         // 改成跟 Pool 借子彈：
         GameObject bullet = BulletPool.Instance.GetBullet(shootPoint.position, cameraTransform.rotation);
-        
+
         if (bullet.TryGetComponent(out SimpleProjectile projectile))
         {
             projectile.Fire(direction, false);
-            UnityEngine.Debug.Log($"{player.playerName} Bang! Fired pooled bullet at locked direction."); 
+            UnityEngine.Debug.Log($"{player.playerName} Bang! Fired pooled bullet at locked direction.");
         }
-        else{
-            UnityEngine.Debug.Log($"{player.playerName} Failed to fire bullet: No SimpleProjectile component found on the pooled bullet.");   
+        else
+        {
+            UnityEngine.Debug.Log($"{player.playerName} Failed to fire bullet: No SimpleProjectile component found on the pooled bullet.");
         }
         // 減少Player bullet數量
         player.bulletCount--;
-          
+        InventoryController.instance.RemoveItem("Hotbar", "Bullet", 1);
+
     }
 
     private void TossCoin(Vector3 direction)
@@ -198,16 +202,18 @@ public class PlayerAimController : MonoBehaviour
         GameObject coin = BulletPool.Instance.GetCoin(shootPoint.position, cameraTransform.rotation);
         double tossForce = this.tossForce; // 使用公共屬性設定的力道
         Vector3 tossDirection = cameraTransform.forward + cameraTransform.up * 0.5f; // 往前加上一點向上的力道，讓硬幣有個漂亮的拋物線
-        
+
         if (coin.TryGetComponent(out Coin coinComponent))
         {
             coinComponent.Toss(tossForce, tossDirection);
-            UnityEngine.Debug.Log($"{player.playerName} Tossed pooled coin at locked direction."); 
+            UnityEngine.Debug.Log($"{player.playerName} Tossed pooled coin at locked direction.");
         }
-        else{
-            UnityEngine.Debug.Log($"{player.playerName} Failed to toss coin: No SimpleProjectile component found on the pooled coin.");   
+        else
+        {
+            UnityEngine.Debug.Log($"{player.playerName} Failed to toss coin: No SimpleProjectile component found on the pooled coin.");
         }
         // 減少Player coin數量
         player.coinCount--;
+        InventoryController.instance.RemoveItem("Hotbar", "Coin", 1);
     }
 }

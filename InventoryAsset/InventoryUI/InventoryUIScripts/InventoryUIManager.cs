@@ -149,6 +149,7 @@ namespace InventorySystem
         [Header("========[ Starting Items Configuration ]========")]
         [SerializeField] private ItemDatabase sharedItemDatabase;
         [SerializeField] private List<StartItem> startingItems;
+        [SerializeField] private Player player;
 
         [Space(10)]
         [Header("***Invokes actions when no valid slot is")]
@@ -182,11 +183,8 @@ namespace InventorySystem
         public void Start()
         {
             if (!TestSetup()) return;
-
             UpdateInventoryUI();
             UI = InventoryController.instance.GetUI();
-
-
         }
 
         /// <summary>
@@ -248,7 +246,6 @@ namespace InventorySystem
             inventory.Resize(rows * cols);
 
             InventoryUIReset();
-
             createSlots();
             SetSlotOrder();
             SetBackground();
@@ -524,10 +521,6 @@ namespace InventorySystem
         /// </summary>
         private void HighLightOnButtonPress()
         {
-            if (Input.GetKeyDown(KeyCode.Mouse0))
-            {
-                ResetHighlight();
-            }
             if (Input.anyKeyDown)
             {
                 string input = Input.inputString;
@@ -689,12 +682,14 @@ namespace InventorySystem
 
                     // Fetch the sprite smoothly from our persistent database file
                     Sprite itemSprite = sharedItemDatabase.GetSpriteByTypeName(item.itemType);
+                    // int itemAmount = item.amount;
+                    int itemAmount = player.getEquipmentCount(item.itemType);
 
                     if (itemSprite != null && positionToSlotDict.ContainsKey(item.position))
                     {
                         Slot slot = positionToSlotDict[item.position].GetComponent<Slot>();
                         slot.GetItemHolder().GetComponent<DragItem>().SetImage(itemSprite);
-                        slot.GetItemHolder().GetComponent<DragItem>().SetTextTestImage(item.amount);
+                        slot.GetItemHolder().GetComponent<DragItem>().SetTextTestImage(itemAmount);
                         slot.SetImageOffSet(ItemImageOffset);
                         slot.GetItemHolder().SetActive(true);
                     }
@@ -707,9 +702,10 @@ namespace InventorySystem
 
                 foreach (StartItem item in startingItems)
                 {
+                    int itemAmount = player.getEquipmentCount(item.itemType); // Fetch the amount from the Player class
                     if (!string.IsNullOrEmpty(item.itemType))
                     {
-                        InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, item.amount);
+                        InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, itemAmount);
                     }
                 }
             }

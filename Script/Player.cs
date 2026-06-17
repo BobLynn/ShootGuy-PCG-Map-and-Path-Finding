@@ -1,13 +1,16 @@
 using UnityEngine;
+using InventorySystem;
 
 public class Player : MonoBehaviour
 {
     public string playerName = "Player";
-    public enum EquipmentType{
+    public enum EquipmentType
+    {
         None,
         Gun,
         Coin,
-        medkit}
+        medkit
+    }
     public EquipmentType currentEquipment = EquipmentType.None;
     // This is used for player status, including health, ammo, coins, etc.
     public int health = 100;
@@ -33,6 +36,21 @@ public class Player : MonoBehaviour
         {
             currentEquipment = EquipmentType.medkit;
             Debug.Log("Equipped Medkit");
+        }
+    }
+
+    public int getEquipmentCount(string type)
+    {
+        switch (type)
+        {
+            case "Bullet":
+                return bulletCount;
+            case "Coin":
+                return coinCount;
+            case "Med":
+                return medkitCount;
+            default:
+                return 0;
         }
     }
 }
