@@ -10,6 +10,10 @@ using UnityEngine.InputSystem;
 
 public class VillaPCG_v3 : MonoBehaviour
 {
+    [Header("Navigation Debug Display")]
+    public bool showWaypointGraph3D = true;
+    public bool showGridMap3D = true;
+
     [Header("Seed")]
     public int seed = 12345;
     public bool randomizeSeedOnPlay = false;
@@ -50,9 +54,9 @@ public class VillaPCG_v3 : MonoBehaviour
     public bool generateOnPlay = false;
 
     [Header("Level Flow")]
-    public int startLevel = 3;
+    public int startLevel = 1;
     [Range(1, 3)]
-    public int currentLevel = 3;
+    public int currentLevel = 1;
     public int finalPcgLevel = 3;
     public bool resetToStartLevelOnPlay = true;
     public bool teleportPlayerAfterGenerate = true;
@@ -88,6 +92,7 @@ public class VillaPCG_v3 : MonoBehaviour
     public float wallThickness = 0.25f;
     public float doorWidth = 4.0f;
     public float floorThickness = 0.15f;
+    const float floorLayerSeparation = 0.02f;
 
     [Header("Visual Debug")]
     public bool showRoomLabels = true;
@@ -475,7 +480,20 @@ public class VillaPCG_v3 : MonoBehaviour
         finalTargetRoom = null;
         currentSpawnTransform = null;
 
-        currentLevel = finalPcgLevel;
+        currentLevel = Mathf.Clamp(levelNumber, 1, finalPcgLevel);
+
+        if (currentLevel == 1)
+        {
+            GenerateApproachAlleyLayout();
+            return;
+        }
+
+        if (currentLevel == 2)
+        {
+            GenerateServiceWingLayout();
+            return;
+        }
+
         GenerateVillaLayout();
     }
 
@@ -1367,7 +1385,7 @@ public class VillaPCG_v3 : MonoBehaviour
             padCollider.isTrigger = true;
 
         LevelExit exit = pad.AddComponent<LevelExit>();
-        // LevelExit currently targets VillaPCG_v2; leave unassigned in v3 to keep this script compile-safe.
+        exit.levelManagerV3 = this;
         exit.targetLevel = nextLevel;
         exit.interactKey = levelAdvanceKey;
         exit.interactRadius = exitInteractRadius;
@@ -1484,6 +1502,42 @@ public class VillaPCG_v3 : MonoBehaviour
     {
         GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
         return playerObject != null ? playerObject.transform : null;
+    }
+
+    void OnValidate()
+    {
+        ApplyNavigationDebugDisplay();
+    }
+
+    void ApplyNavigationDebugDisplay()
+    {
+        if (waypointGraph != null)
+            waypointGraph.showGizmos = showWaypointGraph3D;
+
+        if (gridMap != null)
+            gridMap.showGizmos = showGridMap3D;
+    }
+
+    public void SetWaypointGraph3DVisible(bool visible)
+    {
+        showWaypointGraph3D = visible;
+
+        if (waypointGraph != null)
+            waypointGraph.showGizmos = visible;
+    }
+
+    public void SetGridMap3DVisible(bool visible)
+    {
+        showGridMap3D = visible;
+
+        if (gridMap != null)
+            gridMap.showGizmos = visible;
+    }
+
+    public void SetNavigationDebugVisible(bool visible)
+    {
+        SetWaypointGraph3DVisible(visible);
+        SetGridMap3DVisible(visible);
     }
 
     void OnDrawGizmos()
@@ -1665,7 +1719,7 @@ public class VillaPCG_v3 : MonoBehaviour
         floor.name = "OnePiece_Villa_Floor";
         floor.transform.parent = transform;
 
-        floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f, centerZ);
+        floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f - floorLayerSeparation, centerZ);
         floor.transform.localScale = new Vector3(sizeX, floorThickness, sizeZ);
 
         Renderer renderer = floor.GetComponent<Renderer>();
@@ -2014,3 +2068,106 @@ public class VillaPCG_v3 : MonoBehaviour
         return new Bounds(center, size);
     }
 }
+
+#if UNITY_EDITOR
+[CustomEditor(typeof(VillaPCG_v3))]
+[CanEditMultipleObjects]
+public class VillaPCG_v3Editor : Editor
+{
+    public override void OnInspectorGUI()
+    {
+        EditorGUILayout.LabelField("Navigation Debug Display", EditorStyles.boldLabel);
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Show Waypoint Graph 3D"))
+                SetWaypointGraphVisible(true);
+
+            if (GUILayout.Button("Hide Waypoint Graph 3D"))
+                SetWaypointGraphVisible(false);
+        }
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Show Grid Map 3D"))
+                SetGridMapVisible(true);
+
+            if (GUILayout.Button("Hide Grid Map 3D"))
+                SetGridMapVisible(false);
+        }
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Show Both"))
+                SetBothVisible(true);
+
+            if (GUILayout.Button("Hide Both"))
+                SetBothVisible(false);
+        }
+
+        EditorGUILayout.Space(8);
+
+        DrawPropertiesExcluding(serializedObject, "showWaypointGraph3D", "showGridMap3D");
+    }
+
+    void SetWaypointGraphVisible(bool visible)
+    {
+        foreach (Object selectedTarget in targets)
+        {
+            VillaPCG_v3 pcg = selectedTarget as VillaPCG_v3;
+            if (pcg == null)
+                continue;
+
+            Undo.RecordObject(pcg, "Toggle Waypoint Graph 3D Display");
+            pcg.SetWaypointGraph3DVisible(visible);
+            EditorUtility.SetDirty(pcg);
+
+            if (pcg.waypointGraph != null)
+            {
+                Undo.RecordObject(pcg.waypointGraph, "Toggle Waypoint Graph 3D Gizmos");
+                pcg.waypointGraph.showGizmos = visible;
+                EditorUtility.SetDirty(pcg.waypointGraph);
+            }
+            else
+            {
+                Debug.LogWarning("[VillaPCG] WaypointGraph3D reference is missing.");
+            }
+        }
+
+        SceneView.RepaintAll();
+    }
+
+    void SetGridMapVisible(bool visible)
+    {
+        foreach (Object selectedTarget in targets)
+        {
+            VillaPCG_v3 pcg = selectedTarget as VillaPCG_v3;
+            if (pcg == null)
+                continue;
+
+            Undo.RecordObject(pcg, "Toggle Grid Map 3D Display");
+            pcg.SetGridMap3DVisible(visible);
+            EditorUtility.SetDirty(pcg);
+
+            if (pcg.gridMap != null)
+            {
+                Undo.RecordObject(pcg.gridMap, "Toggle Grid Map 3D Gizmos");
+                pcg.gridMap.showGizmos = visible;
+                EditorUtility.SetDirty(pcg.gridMap);
+            }
+            else
+            {
+                Debug.LogWarning("[VillaPCG] GridMap3D reference is missing.");
+            }
+        }
+
+        SceneView.RepaintAll();
+    }
+
+    void SetBothVisible(bool visible)
+    {
+        SetWaypointGraphVisible(visible);
+        SetGridMapVisible(visible);
+    }
+}
+#endif

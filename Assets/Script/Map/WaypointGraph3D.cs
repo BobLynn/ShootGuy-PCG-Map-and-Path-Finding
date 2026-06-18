@@ -8,6 +8,9 @@ public class WaypointGraph3D : MonoBehaviour
     [Header("Generation Mode")]
     public bool generateOnStart = false;
 
+    [Header("Debug Display")]
+    public bool showGizmos = true;
+
     [Header("Agent Settings")]
     public float agentRadius = 0.5f;
     public float agentHeight = 2.0f;     // Agent 的身高，用來算頭頂空間與視線高度
@@ -298,6 +301,7 @@ public class WaypointGraph3D : MonoBehaviour
     /// </summary>
     void OnDrawGizmos()
     {
+        if (!showGizmos) return;
         if (nodes == null || nodes.Count == 0) return;
 
         // 畫出節點

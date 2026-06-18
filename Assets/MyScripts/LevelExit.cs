@@ -1,9 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using StarterAssets;
 
 public class LevelExit : MonoBehaviour
 {
     public VillaPCG_v2 levelManager;
+    public VillaPCG_v3 levelManagerV3;
     public int targetLevel = 2;
     public Key interactKey = Key.E;
     public float interactRadius = 2.2f;
@@ -18,6 +20,9 @@ public class LevelExit : MonoBehaviour
     {
         if (levelManager == null)
             levelManager = Object.FindFirstObjectByType<VillaPCG_v2>();
+
+        if (levelManagerV3 == null)
+            levelManagerV3 = Object.FindFirstObjectByType<VillaPCG_v3>();
     }
 
     void Update()
@@ -33,7 +38,9 @@ public class LevelExit : MonoBehaviour
         if (Keyboard.current != null && Keyboard.current[interactKey].wasPressedThisFrame)
         {
             activated = true;
-            if (levelManager != null)
+            if (levelManagerV3 != null)
+                levelManagerV3.GoToLevel(targetLevel);
+            else if (levelManager != null)
                 levelManager.GoToLevel(targetLevel);
         }
     }
@@ -43,16 +50,29 @@ public class LevelExit : MonoBehaviour
         if (player != null)
             return;
 
-        CharacterController controller = Object.FindFirstObjectByType<CharacterController>();
-        if (controller != null)
+        GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
+        if (playerObject != null)
         {
-            player = controller.transform;
+            player = playerObject.transform;
             return;
         }
 
-        GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
-        if (playerObject != null)
-            player = playerObject.transform;
+        ThirdPersonController thirdPersonController = Object.FindFirstObjectByType<ThirdPersonController>();
+        if (thirdPersonController != null)
+        {
+            player = thirdPersonController.transform;
+            return;
+        }
+
+        CharacterController[] controllers = Object.FindObjectsOfType<CharacterController>();
+        foreach (CharacterController controller in controllers)
+        {
+            if (controller.GetComponent<Agent>() != null)
+                continue;
+
+            player = controller.transform;
+            return;
+        }
     }
 
     bool IsPlayerInRange()
@@ -67,6 +87,8 @@ public class LevelExit : MonoBehaviour
 
     void OnGUI()
     {
+        EnsurePlayerReference();
+
         if (!IsPlayerInRange())
             return;
 

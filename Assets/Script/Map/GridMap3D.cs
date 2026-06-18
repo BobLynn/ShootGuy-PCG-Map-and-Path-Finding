@@ -30,6 +30,9 @@ public class GridMap3D : MonoBehaviour
     [Header("Generation Mode")]
     public bool generateOnStart = false;
 
+    [Header("Debug Display")]
+    public bool showGizmos = true;
+
     [Header("Height Settings")]
     public float scanHeight = 50f; // 從多高的地方往下掃描 (要比場景中最高的物件還高)
     public LayerMask walkableLayer; // 哪些圖層是可以踩在上面的 (例如 Ground, Box)
@@ -163,6 +166,7 @@ public class GridMap3D : MonoBehaviour
     // 視覺化：在編輯器中畫出高低起伏的網格
     void OnDrawGizmos()
     {
+        if (!showGizmos) return;
         if (grid == null) return;
         int halfCols = cols / 2;
         int halfRows = rows / 2;

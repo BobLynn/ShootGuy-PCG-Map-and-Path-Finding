@@ -166,6 +166,7 @@ namespace InventorySystem
         private Transform UI;
 
         private RectTransform rectTransform;
+        private bool warnedMissingPlayer;
 
         // Holds and organizes slots
         [SerializeField, HideInInspector]
@@ -671,6 +672,8 @@ namespace InventorySystem
         {
             if (startingItems == null || startingItems.Count == 0) return;
 
+            Player resolvedPlayer = GetPlayer();
+
             // --- 1. EDITOR MODE: Auto-fetch graphics from the standalone asset file ---
             if (!Application.isPlaying)
             {
@@ -682,8 +685,7 @@ namespace InventorySystem
 
                     // Fetch the sprite smoothly from our persistent database file
                     Sprite itemSprite = sharedItemDatabase.GetSpriteByTypeName(item.itemType);
-                    // int itemAmount = item.amount;
-                    int itemAmount = player.getEquipmentCount(item.itemType);
+                    int itemAmount = resolvedPlayer != null ? resolvedPlayer.getEquipmentCount(item.itemType) : item.amount;
 
                     if (itemSprite != null && positionToSlotDict.ContainsKey(item.position))
                     {
@@ -702,13 +704,27 @@ namespace InventorySystem
 
                 foreach (StartItem item in startingItems)
                 {
-                    int itemAmount = player.getEquipmentCount(item.itemType); // Fetch the amount from the Player class
                     if (!string.IsNullOrEmpty(item.itemType))
                     {
+                        int itemAmount = resolvedPlayer != null ? resolvedPlayer.getEquipmentCount(item.itemType) : item.amount;
                         InventoryController.instance.AddItemPos(inventoryName, item.itemType, item.position, itemAmount);
                     }
                 }
             }
+        }
+
+        private Player GetPlayer()
+        {
+            if (player != null) return player;
+
+            player = Object.FindFirstObjectByType<Player>();
+            if (player == null && !warnedMissingPlayer)
+            {
+                Debug.LogWarning("InventoryUIManager could not find a Player reference. Starting item amounts will use the configured fallback values.", this);
+                warnedMissingPlayer = true;
+            }
+
+            return player;
         }
         /// <summary>
         /// Allows brackground activity to make all inventory activity

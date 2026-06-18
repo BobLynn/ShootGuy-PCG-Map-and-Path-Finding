@@ -88,6 +88,7 @@ public class VillaPCG_v2 : MonoBehaviour
     public float wallThickness = 0.25f;
     public float doorWidth = 4.0f;
     public float floorThickness = 0.15f;
+    const float floorLayerSeparation = 0.02f;
 
     [Header("Visual Debug")]
     public bool showRoomLabels = true;
@@ -1334,7 +1335,7 @@ public class VillaPCG_v2 : MonoBehaviour
         floor.name = "OnePiece_Villa_Floor";
         floor.transform.parent = transform;
 
-        floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f, centerZ);
+        floor.transform.position = new Vector3(centerX, -floorThickness * 0.5f - floorLayerSeparation, centerZ);
         floor.transform.localScale = new Vector3(sizeX, floorThickness, sizeZ);
 
         Renderer renderer = floor.GetComponent<Renderer>();
