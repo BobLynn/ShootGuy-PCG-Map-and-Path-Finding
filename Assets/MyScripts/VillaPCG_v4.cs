@@ -4,11 +4,12 @@ using UnityEditor.SceneManagement;
 #endif
 
 using System.Collections.Generic;
+using System.Text;
 using StarterAssets;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
+public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 {
     [Header("Navigation Debug Display")]
     public bool showWaypointGraph3D = true;
@@ -148,6 +149,25 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
     public int finalVillaComplexity = 76;
     public FinalVillaStyle finalVillaStyle = FinalVillaStyle.Garden;
 
+    [Header("Enemy Auto Layout")]
+    public bool generateEnemyAgents = true;
+    public GameObject enemyAgentPrefab;
+    [Range(0, 8)]
+    public int maxPatrolEnemyCount = 4;
+    [Range(0, 10)]
+    public int maxStandEnemyCount = 6;
+    public float enemySpawnHeight = 0.08f;
+    public float enemyRoomInset = 2.2f;
+    public float standingGuardDoorOffset = 2.0f;
+    public float enemySpawnExclusionRadius = 6.0f;
+    public float patrolWaypointWaitTime = 1.0f;
+    public string generatedEnemyRoutePrefix = "PCG_Enemy_";
+    public bool logEnemyPlacementSummary = true;
+    [TextArea(3, 8)]
+    public string lastMapRuleSummary;
+    [TextArea(3, 8)]
+    public string lastEnemyPlacementSummary;
+
     void Start()
     {
         if (Application.isPlaying)
@@ -170,6 +190,7 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
     private Room levelExitRoom;
     private Room finalTargetRoom;
     private Transform currentSpawnTransform;
+    private List<Vector3> generatedEnemyGizmoPositions = new List<Vector3>();
 
     enum Side
     {
@@ -271,6 +292,23 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
         }
     }
 
+    class EnemyPlacementRecord
+    {
+        public string enemyName;
+        public string routeName;
+        public string roomName;
+        public string ruleReason;
+        public Vector3 position;
+    }
+
+    class StandingGuardCandidate
+    {
+        public Room room;
+        public Vector3 position;
+        public float score;
+        public string reason;
+    }
+
     // void Start()
     // {
     //     Generate();
@@ -291,6 +329,7 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
         GenerateLevelLayout(currentLevel);
         BuildRoomGraph();
         ValidateReachability();
+        UpdateMapRuleSummary();
 
         // 視覺用大地板，可選，但不要讓 pathfinding 使用它
         CreateOnePieceFloor();
@@ -319,6 +358,12 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
 
         Physics.SyncTransforms();
 
+        RebuildNavigationAfterGenerate();
+
+        GenerateEnemyLayout();
+
+        Physics.SyncTransforms();
+
     #if UNITY_EDITOR
         if (!Application.isPlaying)
         {
@@ -328,8 +373,6 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
     #endif
 
         Debug.Log($"[VillaPCG] Runtime level {currentLevel} map generated.");
-
-        RebuildNavigationAfterGenerate();
 
         if (Application.isPlaying && teleportPlayerAfterGenerate)
             TeleportPlayerToSpawn();
@@ -478,6 +521,8 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
 
     void ClearOldMap()
     {
+        ClearGeneratedEnemyRoutes();
+
         List<GameObject> toDelete = new List<GameObject>();
 
         for (int i = transform.childCount - 1; i >= 0; i--)
@@ -1079,6 +1124,53 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
             Debug.Log($"[VillaPCG] Level {currentLevel} reachability validation passed.");
     }
 
+    void UpdateMapRuleSummary()
+    {
+        int publicCount = CountRoomsBySecurity(SecurityLevel.Public);
+        int semiRestrictedCount = CountRoomsBySecurity(SecurityLevel.SemiRestricted);
+        int restrictedCount = CountRoomsBySecurity(SecurityLevel.Restricted);
+        int criticalCount = CountRoomsBySecurity(SecurityLevel.Critical);
+
+        bool canReachPrimary = !string.IsNullOrEmpty(playerSpawnRoomName)
+            && !string.IsNullOrEmpty(primaryGoalRoomName)
+            && IsReachable(playerSpawnRoomName, primaryGoalRoomName);
+
+        bool canReachSecondary = string.IsNullOrEmpty(secondaryGoalRoomName)
+            || (!string.IsNullOrEmpty(primaryGoalRoomName) && IsReachable(primaryGoalRoomName, secondaryGoalRoomName));
+
+        StringBuilder summary = new StringBuilder();
+        summary.AppendLine($"Level {currentLevel} map PCG rules: seed={seed}, style={finalVillaStyle}, complexity={finalVillaComplexity}");
+        summary.AppendLine($"rooms={rooms.Count}, connections={connections.Count}, roomGraphNodes={roomGraph.Count}");
+        summary.AppendLine($"security: public={publicCount}, semiRestricted={semiRestrictedCount}, restricted={restrictedCount}, critical={criticalCount}");
+        summary.AppendLine($"flow: spawn={GetSafeRuleName(playerSpawnRoomName)}, primaryGoal={GetSafeRuleName(primaryGoalRoomName)}, secondaryGoal={GetSafeRuleName(secondaryGoalRoomName)}");
+        summary.AppendLine($"objectives: levelExit={GetSafeRuleName(levelExitRoom != null ? levelExitRoom.name : null)}, finalTarget={GetSafeRuleName(finalTargetRoom != null ? finalTargetRoom.name : null)}");
+        summary.AppendLine($"reachability: spawnToPrimary={canReachPrimary}, primaryToSecondary={canReachSecondary}");
+
+        lastMapRuleSummary = summary.ToString();
+
+    #if UNITY_EDITOR
+        if (!Application.isPlaying)
+            EditorUtility.SetDirty(this);
+    #endif
+    }
+
+    int CountRoomsBySecurity(SecurityLevel security)
+    {
+        int count = 0;
+        foreach (Room room in rooms)
+        {
+            if (room.security == security)
+                count++;
+        }
+
+        return count;
+    }
+
+    string GetSafeRuleName(string value)
+    {
+        return string.IsNullOrEmpty(value) ? "none" : value;
+    }
+
     bool IsReachable(string start, string goal)
     {
         if (!roomGraph.ContainsKey(start) || !roomGraph.ContainsKey(goal))
@@ -1487,6 +1579,699 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
         }
     }
 
+    void GenerateEnemyLayout()
+    {
+        lastEnemyPlacementSummary = "";
+        generatedEnemyGizmoPositions.Clear();
+
+        if (!generateEnemyAgents)
+            return;
+
+        GameObject prefab = GetEnemyAgentPrefab();
+        if (prefab == null)
+        {
+            Debug.LogWarning("[VillaPCG] Enemy auto layout skipped because enemyAgentPrefab is missing.");
+            return;
+        }
+
+        RouteManager routeManager = EnsureRouteManager();
+        if (routeManager == null)
+        {
+            Debug.LogWarning("[VillaPCG] Enemy auto layout skipped because RouteManager could not be created.");
+            return;
+        }
+
+        GameObject routeRoot = new GameObject("Generated_EnemyRoutes");
+        routeRoot.transform.parent = transform;
+
+        GameObject enemyRoot = new GameObject("Generated_EnemyAgents");
+        enemyRoot.transform.parent = transform;
+
+        List<EnemyPlacementRecord> placements = new List<EnemyPlacementRecord>();
+        List<Room> patrolRooms = GetEnemyCandidateRooms(true);
+        SortRoomsByEnemyPlacementScore(patrolRooms, true);
+
+        int patrolCount = Mathf.Min(GetPatrolEnemyBudget(), patrolRooms.Count);
+        for (int i = 0; i < patrolCount; i++)
+        {
+            Room room = patrolRooms[i];
+            string routeName = generatedEnemyRoutePrefix + "Patrol_" + (i + 1).ToString("00");
+            RouteDefinition route = CreatePatrolRoute(routeManager, routeRoot.transform, routeName, room);
+
+            if (route.waypoints.Count > 0 && route.waypoints[0].point != null)
+            {
+                Vector3 spawnPosition = route.waypoints[0].point.position + Vector3.up * enemySpawnHeight;
+                Quaternion spawnRotation = Quaternion.LookRotation(GetRoomFacingDirection(room, spawnPosition), Vector3.up);
+                GameObject enemy = CreateEnemyInstance(prefab, "patrolEnemyTest_PCG_" + (i + 1).ToString("00"), spawnPosition, spawnRotation, enemyRoot.transform);
+                ConfigureEnemyAgent(enemy, route.routeName, AgentDecision.PATROL);
+                RecordEnemyPlacement(placements, enemy.name, route.routeName, room, spawnPosition, GetRoomPlacementReason(room, true));
+            }
+        }
+
+        List<StandingGuardCandidate> standCandidates = BuildStandingGuardCandidates();
+        int standCount = Mathf.Min(GetStandEnemyBudget(), standCandidates.Count);
+        for (int i = 0; i < standCount; i++)
+        {
+            StandingGuardCandidate candidate = standCandidates[i];
+            Vector3 spawnPosition = candidate.position + Vector3.up * enemySpawnHeight;
+            string routeName = generatedEnemyRoutePrefix + "Stand_" + (i + 1).ToString("00");
+            Room containingRoom = candidate.room != null ? candidate.room : FindRoomContainingPoint(spawnPosition);
+            CreateSinglePointRoute(routeManager, routeRoot.transform, routeName, spawnPosition, containingRoom);
+
+            Vector3 facing = containingRoom != null ? GetRoomFacingDirection(containingRoom, spawnPosition) : Vector3.forward;
+            GameObject enemy = CreateEnemyInstance(prefab, "standEnemyTest_PCG_" + (i + 1).ToString("00"), spawnPosition, Quaternion.LookRotation(facing, Vector3.up), enemyRoot.transform);
+            ConfigureEnemyAgent(enemy, routeName, AgentDecision.LONGREST);
+            RecordEnemyPlacement(placements, enemy.name, routeName, containingRoom, spawnPosition, candidate.reason);
+        }
+
+        routeManager.RebuildRouteDictionary();
+        MarkRouteManagerDirty(routeManager);
+        UpdateEnemyPlacementSummary(placements);
+    }
+
+    GameObject GetEnemyAgentPrefab()
+    {
+        if (enemyAgentPrefab != null)
+            return enemyAgentPrefab;
+
+    #if UNITY_EDITOR
+        enemyAgentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Agent_v2.prefab");
+        if (enemyAgentPrefab != null)
+            EditorUtility.SetDirty(this);
+    #endif
+
+        return enemyAgentPrefab;
+    }
+
+    RouteManager EnsureRouteManager()
+    {
+        RouteManager routeManager = Object.FindFirstObjectByType<RouteManager>();
+        if (routeManager != null)
+            return routeManager;
+
+        GameObject routeManagerObject = new GameObject("Generated_RouteManager");
+        routeManagerObject.transform.parent = transform;
+        return routeManagerObject.AddComponent<RouteManager>();
+    }
+
+    void ClearGeneratedEnemyRoutes()
+    {
+        RouteManager routeManager = Object.FindFirstObjectByType<RouteManager>();
+        if (routeManager == null || routeManager.allRoutes == null)
+            return;
+
+        int removed = routeManager.allRoutes.RemoveAll(IsGeneratedEnemyRoute);
+        if (removed <= 0)
+            return;
+
+        routeManager.RebuildRouteDictionary();
+        MarkRouteManagerDirty(routeManager);
+    }
+
+    bool IsGeneratedEnemyRoute(RouteDefinition route)
+    {
+        if (route == null || string.IsNullOrEmpty(route.routeName))
+            return false;
+
+        if ((!string.IsNullOrEmpty(generatedEnemyRoutePrefix) && route.routeName.StartsWith(generatedEnemyRoutePrefix, System.StringComparison.Ordinal))
+            || route.routeName.StartsWith("PCG_Enemy_", System.StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (route.waypoints == null)
+            return false;
+
+        foreach (WaypointInfo waypoint in route.waypoints)
+        {
+            if (waypoint != null && waypoint.point != null && waypoint.point.IsChildOf(transform))
+                return true;
+        }
+
+        return false;
+    }
+
+    int GetPatrolEnemyBudget()
+    {
+        if (maxPatrolEnemyCount <= 0)
+            return 0;
+
+        int levelBudget = currentLevel >= finalPcgLevel ? maxPatrolEnemyCount : currentLevel;
+        return Mathf.Clamp(levelBudget, 0, maxPatrolEnemyCount);
+    }
+
+    int GetStandEnemyBudget()
+    {
+        if (maxStandEnemyCount <= 0)
+            return 0;
+
+        int levelBudget = currentLevel >= finalPcgLevel ? maxStandEnemyCount : currentLevel + 1;
+        return Mathf.Clamp(levelBudget, 0, maxStandEnemyCount);
+    }
+
+    List<Room> GetEnemyCandidateRooms(bool patrolOnly)
+    {
+        List<Room> candidates = new List<Room>();
+
+        foreach (Room room in rooms)
+        {
+            if (ShouldSkipEnemyRoom(room))
+                continue;
+
+            int securityWeight = GetSecurityWeight(room.security);
+            if (patrolOnly && securityWeight < GetSecurityWeight(SecurityLevel.Restricted))
+                continue;
+
+            if (!patrolOnly && securityWeight < GetSecurityWeight(SecurityLevel.SemiRestricted))
+                continue;
+
+            candidates.Add(room);
+        }
+
+        if (candidates.Count > 0)
+            return candidates;
+
+        foreach (Room room in rooms)
+        {
+            if (!ShouldSkipEnemyRoom(room))
+                candidates.Add(room);
+        }
+
+        return candidates;
+    }
+
+    void SortRoomsByEnemyPlacementScore(List<Room> candidates, bool patrolOnly)
+    {
+        candidates.Sort((a, b) => CompareRoomsForEnemyPlacement(a, b, patrolOnly));
+    }
+
+    int CompareRoomsForEnemyPlacement(Room a, Room b, bool patrolOnly)
+    {
+        int scoreCompare = CalculateEnemyRoomScore(b, patrolOnly).CompareTo(CalculateEnemyRoomScore(a, patrolOnly));
+        if (scoreCompare != 0)
+            return scoreCompare;
+
+        int nameCompare = string.Compare(a.name, b.name, System.StringComparison.Ordinal);
+        if (nameCompare != 0)
+            return nameCompare;
+
+        int xCompare = a.center.x.CompareTo(b.center.x);
+        if (xCompare != 0)
+            return xCompare;
+
+        return a.center.y.CompareTo(b.center.y);
+    }
+
+    float CalculateEnemyRoomScore(Room room, bool patrolOnly)
+    {
+        if (room == null)
+            return float.MinValue;
+
+        float score = 0f;
+        score += GetSecurityWeight(room.security) * 100f;
+        score += Mathf.Clamp(GetRoomDepthFromSpawn(room.name), 0, 12) * 12f;
+        score += Mathf.Sqrt(Mathf.Max(1f, room.size.x * room.size.y)) * (patrolOnly ? 1.8f : 1.0f);
+
+        if (finalTargetRoom == room || room.name == primaryGoalRoomName)
+            score += 55f;
+
+        if (!string.IsNullOrEmpty(secondaryGoalRoomName) && room.name == secondaryGoalRoomName)
+            score += 25f;
+
+        if (IsNearPlayerSpawn(room.center))
+            score -= 200f;
+
+        return score;
+    }
+
+    string GetRoomPlacementReason(Room room, bool patrolOnly)
+    {
+        if (room == null)
+            return "unknown room";
+
+        string role = patrolOnly ? "patrol" : "stand";
+        return $"RoomThreatScore/{role}: security={room.security}, graphDepth={GetRoomDepthFromSpawn(room.name)}, score={CalculateEnemyRoomScore(room, patrolOnly):0.0}";
+    }
+
+    int GetRoomDepthFromSpawn(string roomName)
+    {
+        if (string.IsNullOrEmpty(playerSpawnRoomName) || string.IsNullOrEmpty(roomName))
+            return 0;
+
+        if (!roomGraph.ContainsKey(playerSpawnRoomName) || !roomGraph.ContainsKey(roomName))
+            return 0;
+
+        Queue<string> queue = new Queue<string>();
+        Dictionary<string, int> depths = new Dictionary<string, int>();
+        queue.Enqueue(playerSpawnRoomName);
+        depths[playerSpawnRoomName] = 0;
+
+        while (queue.Count > 0)
+        {
+            string current = queue.Dequeue();
+            if (current == roomName)
+                return depths[current];
+
+            foreach (string next in roomGraph[current])
+            {
+                if (depths.ContainsKey(next))
+                    continue;
+
+                depths[next] = depths[current] + 1;
+                queue.Enqueue(next);
+            }
+        }
+
+        return 0;
+    }
+
+    bool IsNearPlayerSpawn(Vector2 point)
+    {
+        Room spawnRoom = rooms.Find(r => r.name == playerSpawnRoomName);
+        if (spawnRoom == null)
+            return false;
+
+        return Vector2.Distance(spawnRoom.center, point) < enemySpawnExclusionRadius;
+    }
+
+    bool ShouldSkipEnemyRoom(Room room)
+    {
+        if (room == null)
+            return true;
+
+        if (room.name == playerSpawnRoomName)
+            return true;
+
+        if (room == levelExitRoom)
+            return true;
+
+        return false;
+    }
+
+    int GetSecurityWeight(SecurityLevel security)
+    {
+        switch (security)
+        {
+            case SecurityLevel.Critical:
+                return 3;
+            case SecurityLevel.Restricted:
+                return 2;
+            case SecurityLevel.SemiRestricted:
+                return 1;
+            default:
+                return 0;
+        }
+    }
+
+    void ShuffleRooms(List<Room> roomList)
+    {
+        for (int i = 0; i < roomList.Count; i++)
+        {
+            int swapIndex = Random.Range(i, roomList.Count);
+            Room temp = roomList[i];
+            roomList[i] = roomList[swapIndex];
+            roomList[swapIndex] = temp;
+        }
+    }
+
+    RouteDefinition CreatePatrolRoute(RouteManager routeManager, Transform routeRoot, string routeName, Room room)
+    {
+        RouteDefinition route = new RouteDefinition
+        {
+            routeName = routeName,
+            isLoop = true
+        };
+
+        string roomToken = SanitizeNameToken(room.name);
+        Vector3[] patrolPoints = GetPatrolPointsForRoom(room);
+        for (int i = 0; i < patrolPoints.Length; i++)
+        {
+            Transform point = CreateRoutePoint(routeRoot, routeName + "_" + roomToken + "_WP_" + (i + 1).ToString("00"), patrolPoints[i]);
+            route.waypoints.Add(new WaypointInfo
+            {
+                point = point,
+                waitTime = patrolWaypointWaitTime
+            });
+        }
+
+        routeManager.allRoutes.Add(route);
+        return route;
+    }
+
+    void CreateSinglePointRoute(RouteManager routeManager, Transform routeRoot, string routeName, Vector3 position, Room room)
+    {
+        RouteDefinition route = new RouteDefinition
+        {
+            routeName = routeName,
+            isLoop = false
+        };
+
+        string roomToken = room != null ? SanitizeNameToken(room.name) : "UnknownRoom";
+        route.waypoints.Add(new WaypointInfo
+        {
+            point = CreateRoutePoint(routeRoot, routeName + "_" + roomToken + "_Hold", position),
+            waitTime = 999f
+        });
+
+        routeManager.allRoutes.Add(route);
+    }
+
+    string SanitizeNameToken(string source)
+    {
+        if (string.IsNullOrEmpty(source))
+            return "Unnamed";
+
+        StringBuilder builder = new StringBuilder(source.Length);
+        foreach (char character in source)
+        {
+            if (char.IsLetterOrDigit(character))
+                builder.Append(character);
+            else if (character == '_' || character == '-')
+                builder.Append(character);
+            else if (char.IsWhiteSpace(character))
+                builder.Append('_');
+        }
+
+        return builder.Length > 0 ? builder.ToString() : "Unnamed";
+    }
+
+    Transform CreateRoutePoint(Transform routeRoot, string pointName, Vector3 position)
+    {
+        GameObject point = new GameObject(pointName);
+        point.transform.parent = routeRoot;
+        point.transform.position = new Vector3(position.x, 0.05f, position.z);
+        return point.transform;
+    }
+
+    Vector3[] GetPatrolPointsForRoom(Room room)
+    {
+        float insetX = Mathf.Min(enemyRoomInset, room.size.x * 0.32f);
+        float insetZ = Mathf.Min(enemyRoomInset, room.size.y * 0.32f);
+        float left = room.Left + insetX;
+        float right = room.Right - insetX;
+        float bottom = room.Bottom + insetZ;
+        float top = room.Top - insetZ;
+
+        if (right <= left)
+            left = right = room.center.x;
+
+        if (top <= bottom)
+            bottom = top = room.center.y;
+
+        if (Mathf.Abs(right - left) < 0.5f || Mathf.Abs(top - bottom) < 0.5f)
+        {
+            return new[]
+            {
+                new Vector3(room.center.x, 0.05f, room.center.y)
+            };
+        }
+
+        return new[]
+        {
+            new Vector3(left, 0.05f, bottom),
+            new Vector3(right, 0.05f, bottom),
+            new Vector3(right, 0.05f, top),
+            new Vector3(left, 0.05f, top)
+        };
+    }
+
+    List<StandingGuardCandidate> BuildStandingGuardCandidates()
+    {
+        List<StandingGuardCandidate> candidates = new List<StandingGuardCandidate>();
+
+        foreach (Connection connection in connections)
+        {
+            Room guardRoom = GetMoreSecureRoom(connection.a, connection.b);
+            if (ShouldSkipEnemyRoom(guardRoom) || GetSecurityWeight(guardRoom.security) < GetSecurityWeight(SecurityLevel.SemiRestricted))
+                continue;
+
+            Vector3 door = connection.doorWorldPos;
+            Vector3 towardRoom = new Vector3(guardRoom.center.x - door.x, 0f, guardRoom.center.y - door.z);
+            if (towardRoom.sqrMagnitude < 0.01f)
+                towardRoom = Vector3.forward;
+
+            Vector3 position = door + towardRoom.normalized * standingGuardDoorOffset;
+            position = ClampPointInsideRoom(position, guardRoom);
+            AddStandingCandidateIfSpaced(candidates, new StandingGuardCandidate
+            {
+                room = guardRoom,
+                position = position,
+                score = CalculateStandingGuardScore(connection, guardRoom, position),
+                reason = GetStandingGuardReason(connection, guardRoom, position)
+            });
+        }
+
+        List<Room> fallbackRooms = GetEnemyCandidateRooms(false);
+        SortRoomsByEnemyPlacementScore(fallbackRooms, false);
+        foreach (Room room in fallbackRooms)
+        {
+            if (candidates.Count >= maxStandEnemyCount)
+                break;
+
+            Vector3 position = new Vector3(room.center.x, 0.05f, room.center.y);
+            AddStandingCandidateIfSpaced(candidates, new StandingGuardCandidate
+            {
+                room = room,
+                position = position,
+                score = CalculateEnemyRoomScore(room, false) - 30f,
+                reason = GetRoomPlacementReason(room, false) + ", FallbackRoomCenter"
+            });
+        }
+
+        candidates.Sort(CompareStandingGuardCandidates);
+        return candidates;
+    }
+
+    int CompareStandingGuardCandidates(StandingGuardCandidate a, StandingGuardCandidate b)
+    {
+        int scoreCompare = b.score.CompareTo(a.score);
+        if (scoreCompare != 0)
+            return scoreCompare;
+
+        string aRoomName = a.room != null ? a.room.name : "";
+        string bRoomName = b.room != null ? b.room.name : "";
+        int roomCompare = string.Compare(aRoomName, bRoomName, System.StringComparison.Ordinal);
+        if (roomCompare != 0)
+            return roomCompare;
+
+        int xCompare = a.position.x.CompareTo(b.position.x);
+        if (xCompare != 0)
+            return xCompare;
+
+        return a.position.z.CompareTo(b.position.z);
+    }
+
+    float CalculateStandingGuardScore(Connection connection, Room guardRoom, Vector3 position)
+    {
+        float score = CalculateEnemyRoomScore(guardRoom, false);
+        Room otherRoom = connection.a == guardRoom ? connection.b : connection.a;
+        score += Mathf.Abs(GetSecurityWeight(guardRoom.security) - GetSecurityWeight(otherRoom.security)) * 35f;
+
+        if (connection.a.name == primaryGoalRoomName || connection.b.name == primaryGoalRoomName)
+            score += 30f;
+
+        if (IsNearPlayerSpawn(new Vector2(position.x, position.z)))
+            score -= 150f;
+
+        return score;
+    }
+
+    string GetStandingGuardReason(Connection connection, Room guardRoom, Vector3 position)
+    {
+        Room otherRoom = connection.a == guardRoom ? connection.b : connection.a;
+        return $"DoorGuardScore: guards {guardRoom.name} door from {otherRoom.name}, security={guardRoom.security}, graphDepth={GetRoomDepthFromSpawn(guardRoom.name)}, score={CalculateStandingGuardScore(connection, guardRoom, position):0.0}";
+    }
+
+    Room GetMoreSecureRoom(Room a, Room b)
+    {
+        if (GetSecurityWeight(a.security) >= GetSecurityWeight(b.security))
+            return a;
+
+        return b;
+    }
+
+    Vector3 ClampPointInsideRoom(Vector3 point, Room room)
+    {
+        float marginX = Mathf.Min(enemyRoomInset, room.size.x * 0.35f);
+        float marginZ = Mathf.Min(enemyRoomInset, room.size.y * 0.35f);
+
+        return new Vector3(
+            Mathf.Clamp(point.x, room.Left + marginX, room.Right - marginX),
+            0.05f,
+            Mathf.Clamp(point.z, room.Bottom + marginZ, room.Top - marginZ)
+        );
+    }
+
+    void AddStandingCandidateIfSpaced(List<StandingGuardCandidate> candidates, StandingGuardCandidate candidate)
+    {
+        const float minSpacing = 2.5f;
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            Vector3 delta = candidates[i].position - candidate.position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude < minSpacing * minSpacing)
+                return;
+        }
+
+        candidates.Add(candidate);
+    }
+
+    Room FindRoomContainingPoint(Vector3 point)
+    {
+        foreach (Room room in rooms)
+        {
+            if (point.x >= room.Left && point.x <= room.Right && point.z >= room.Bottom && point.z <= room.Top)
+                return room;
+        }
+
+        return null;
+    }
+
+    Vector3 GetRoomFacingDirection(Room room, Vector3 position)
+    {
+        Vector3 direction = new Vector3(room.center.x - position.x, 0f, room.center.y - position.z);
+        if (direction.sqrMagnitude < 0.01f)
+            direction = Vector3.forward;
+
+        return direction.normalized;
+    }
+
+    GameObject CreateEnemyInstance(GameObject prefab, string enemyName, Vector3 position, Quaternion rotation, Transform parent)
+    {
+        GameObject enemy;
+
+    #if UNITY_EDITOR
+        if (!Application.isPlaying)
+        {
+            enemy = PrefabUtility.InstantiatePrefab(prefab, gameObject.scene) as GameObject;
+            if (enemy == null)
+                enemy = Instantiate(prefab);
+        }
+        else
+    #endif
+        {
+            enemy = Instantiate(prefab);
+        }
+
+        enemy.name = enemyName;
+        enemy.transform.parent = parent;
+        enemy.transform.SetPositionAndRotation(position, rotation);
+        return enemy;
+    }
+
+    void ConfigureEnemyAgent(GameObject enemy, string routeName, AgentDecision decision)
+    {
+        if (enemy == null)
+            return;
+
+        Agent agent = enemy.GetComponent<Agent>();
+        if (agent != null)
+        {
+            agent.Name = enemy.name;
+            agent.defaultState = decision == AgentDecision.PATROL ? AgentState.SEEK : AgentState.NONE;
+            agent.currentState = agent.defaultState;
+        }
+
+        AgentBrain brain = enemy.GetComponent<AgentBrain>();
+        if (brain != null)
+        {
+            brain.defaultRouteName = routeName;
+            brain.defaultDecision = decision;
+            brain.currentDecision = decision;
+            brain.startIndex = 0;
+        }
+
+        AgentNavigator navigator = enemy.GetComponent<AgentNavigator>();
+        if (navigator != null)
+        {
+            navigator.gridMap = gridMap;
+            navigator.waypointGraph = waypointGraph;
+            navigator.useGridMap = gridMap != null;
+            navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
+        }
+    }
+
+    void RecordEnemyPlacement(List<EnemyPlacementRecord> placements, string enemyName, string routeName, Room room, Vector3 position, string ruleReason)
+    {
+        generatedEnemyGizmoPositions.Add(position);
+
+        placements.Add(new EnemyPlacementRecord
+        {
+            enemyName = enemyName,
+            routeName = routeName,
+            roomName = room != null ? room.name : "Unknown",
+            ruleReason = ruleReason,
+            position = position
+        });
+    }
+
+    void UpdateEnemyPlacementSummary(List<EnemyPlacementRecord> placements)
+    {
+        StringBuilder summary = new StringBuilder();
+        summary.AppendLine($"Level {currentLevel} enemy PCG layout: {placements.Count} generated agents");
+
+        foreach (EnemyPlacementRecord placement in placements)
+        {
+            summary.Append("- ");
+            summary.Append(placement.enemyName);
+            summary.Append(" | route=");
+            summary.Append(placement.routeName);
+            summary.Append(" | room=");
+            summary.Append(placement.roomName);
+            summary.Append(" | pos=");
+            summary.Append(FormatVector3(placement.position));
+            summary.Append(" | ");
+            summary.AppendLine(placement.ruleReason);
+        }
+
+        lastEnemyPlacementSummary = summary.ToString();
+
+        if (logEnemyPlacementSummary)
+            Debug.Log("[VillaPCG] " + lastEnemyPlacementSummary);
+
+    #if UNITY_EDITOR
+        if (!Application.isPlaying)
+            EditorUtility.SetDirty(this);
+    #endif
+    }
+
+    public string BuildPcgReport()
+    {
+        StringBuilder report = new StringBuilder();
+        report.AppendLine("VillaPCG v4 PCG Report");
+        report.AppendLine("=======================");
+        report.AppendLine();
+
+        report.AppendLine("[Map Rules]");
+        report.AppendLine(string.IsNullOrWhiteSpace(lastMapRuleSummary)
+            ? "No map summary generated yet. Run Generate + Validate Enemy PCG first."
+            : lastMapRuleSummary.TrimEnd());
+        report.AppendLine();
+
+        report.AppendLine("[Enemy Layout]");
+        report.AppendLine(string.IsNullOrWhiteSpace(lastEnemyPlacementSummary)
+            ? "No enemy placement summary generated yet. Run Generate + Validate Enemy PCG first."
+            : lastEnemyPlacementSummary.TrimEnd());
+
+        return report.ToString();
+    }
+
+    string FormatVector3(Vector3 value)
+    {
+        return $"({value.x:0.0}, {value.y:0.0}, {value.z:0.0})";
+    }
+
+    void MarkRouteManagerDirty(RouteManager routeManager)
+    {
+    #if UNITY_EDITOR
+        if (routeManager != null && !Application.isPlaying)
+        {
+            EditorUtility.SetDirty(routeManager);
+            EditorSceneManager.MarkSceneDirty(routeManager.gameObject.scene);
+        }
+    #endif
+    }
+
     void CreateLevelExitRoomObjects(Room exitRoom, int nextLevel)
     {
         GameObject root = new GameObject("LevelExit_" + exitRoom.name);
@@ -1507,7 +2292,7 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
             padCollider.isTrigger = true;
 
         LevelExit exit = pad.AddComponent<LevelExit>();
-        exit.levelManagerV3 = this;
+        exit.levelManagerV4 = this;
         exit.targetLevel = nextLevel;
         exit.interactKey = levelAdvanceKey;
         exit.interactRadius = exitInteractRadius;
@@ -1681,6 +2466,13 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
             Vector3 b = new Vector3(c.b.center.x, 0.15f, c.b.center.y);
             Gizmos.DrawLine(a, c.doorWorldPos + Vector3.up * 0.15f);
             Gizmos.DrawLine(c.doorWorldPos + Vector3.up * 0.15f, b);
+        }
+
+        Gizmos.color = Color.red;
+
+        foreach (Vector3 enemyPosition in generatedEnemyGizmoPositions)
+        {
+            Gizmos.DrawSphere(enemyPosition + Vector3.up * 0.6f, 0.45f);
         }
     }
 
@@ -2189,9 +2981,9 @@ public class VillaPCG_v3 : MonoBehaviour, ILevelNavigator
 }
 
 #if UNITY_EDITOR
-[CustomEditor(typeof(VillaPCG_v3))]
+[CustomEditor(typeof(VillaPCG_v4))]
 [CanEditMultipleObjects]
-public class VillaPCG_v3Editor : Editor
+public class VillaPCG_v4Editor : Editor
 {
     public override void OnInspectorGUI()
     {
@@ -2212,6 +3004,25 @@ public class VillaPCG_v3Editor : Editor
         {
             if (GUILayout.Button("Regenerate With New Seed"))
                 RunGenerationAction("Regenerate Villa With New Seed", pcg => pcg.RegenerateWithNewSeed());
+        }
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Generate + Validate Enemy PCG"))
+                RunGenerationAction("Generate And Validate Enemy PCG", pcg =>
+                {
+                    pcg.Generate();
+                    ValidateEnemyPcgLayout(pcg);
+                });
+
+            if (GUILayout.Button("Copy PCG Report"))
+                CopyPcgReport();
+        }
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Generate + Validate + Save Scene"))
+                GenerateValidateAndSaveSelectedScenes();
         }
 
         using (new EditorGUILayout.HorizontalScope())
@@ -2264,13 +3075,13 @@ public class VillaPCG_v3Editor : Editor
         serializedObject.ApplyModifiedProperties();
     }
 
-    void RunGenerationAction(string undoName, System.Action<VillaPCG_v3> generationAction)
+    void RunGenerationAction(string undoName, System.Action<VillaPCG_v4> generationAction)
     {
         serializedObject.ApplyModifiedProperties();
 
         foreach (Object selectedTarget in targets)
         {
-            VillaPCG_v3 pcg = selectedTarget as VillaPCG_v3;
+            VillaPCG_v4 pcg = selectedTarget as VillaPCG_v4;
             if (pcg == null)
                 continue;
 
@@ -2286,11 +3097,305 @@ public class VillaPCG_v3Editor : Editor
         SceneView.RepaintAll();
     }
 
+    void CopyPcgReport()
+    {
+        serializedObject.ApplyModifiedProperties();
+
+        StringBuilder report = new StringBuilder();
+        foreach (Object selectedTarget in targets)
+        {
+            if (selectedTarget is not VillaPCG_v4 pcg)
+                continue;
+
+            if (report.Length > 0)
+            {
+                report.AppendLine();
+                report.AppendLine("---");
+                report.AppendLine();
+            }
+
+            report.Append(pcg.BuildPcgReport());
+        }
+
+        EditorGUIUtility.systemCopyBuffer = report.ToString();
+        Debug.Log("[VillaPCG_v4] PCG report copied to clipboard.");
+    }
+
+    void GenerateValidateAndSaveSelectedScenes()
+    {
+        serializedObject.ApplyModifiedProperties();
+
+        if (Application.isPlaying)
+        {
+            Debug.LogWarning("[VillaPCG_v4] Scene save is disabled while playing.");
+            return;
+        }
+
+        foreach (Object selectedTarget in targets)
+        {
+            if (selectedTarget is not VillaPCG_v4 pcg)
+                continue;
+
+            Undo.RecordObject(pcg, "Generate Validate And Save Enemy PCG Scene");
+            pcg.Generate();
+
+            if (!ValidateEnemyPcgLayout(pcg))
+                continue;
+
+            EditorUtility.SetDirty(pcg);
+            EditorSceneManager.MarkSceneDirty(pcg.gameObject.scene);
+
+            if (EditorSceneManager.SaveScene(pcg.gameObject.scene))
+                Debug.Log($"[VillaPCG_v4] Saved generated enemy PCG scene: {pcg.gameObject.scene.path}");
+            else
+                Debug.LogError($"[VillaPCG_v4] Failed to save generated enemy PCG scene: {pcg.gameObject.scene.path}");
+        }
+
+        serializedObject.Update();
+        SceneView.RepaintAll();
+    }
+
+    bool ValidateEnemyPcgLayout(VillaPCG_v4 pcg)
+    {
+        if (pcg == null)
+            return false;
+
+        if (!pcg.generateEnemyAgents)
+        {
+            Debug.LogWarning("[VillaPCG_v4 Validation] Enemy generation is disabled.");
+            return false;
+        }
+
+        bool passed = true;
+        Transform enemyRoot = pcg.transform.Find("Generated_EnemyAgents");
+        Transform routeRoot = pcg.transform.Find("Generated_EnemyRoutes");
+        int patrolEnemyCount = CountChildrenWithNamePrefix(enemyRoot, "patrolEnemyTest_PCG_");
+        int standEnemyCount = CountChildrenWithNamePrefix(enemyRoot, "standEnemyTest_PCG_");
+        int routePointCount = routeRoot != null ? routeRoot.childCount : 0;
+        int generatedRouteCount = CountGeneratedEnemyRoutes(pcg);
+        RouteManager routeManager = Object.FindFirstObjectByType<RouteManager>();
+
+        if (enemyRoot == null)
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] Missing Generated_EnemyAgents root.");
+            passed = false;
+        }
+
+        if (routeRoot == null)
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] Missing Generated_EnemyRoutes root.");
+            passed = false;
+        }
+
+        if (patrolEnemyCount + standEnemyCount <= 0)
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] No generated patrol or standing enemy agents found.");
+            passed = false;
+        }
+
+        if (routePointCount <= 0 || generatedRouteCount <= 0)
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] No generated enemy route data found.");
+            passed = false;
+        }
+
+        if (routeManager == null)
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] RouteManager is missing.");
+            passed = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(pcg.lastMapRuleSummary))
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] lastMapRuleSummary is empty.");
+            passed = false;
+        }
+        else if (!pcg.lastMapRuleSummary.Contains("map PCG rules") || !pcg.lastMapRuleSummary.Contains("reachability"))
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] lastMapRuleSummary does not include map rule and reachability data.");
+            passed = false;
+        }
+
+        if (enemyRoot != null && routeManager != null)
+        {
+            if (!ValidateGeneratedEnemyAgents(pcg, enemyRoot, routeManager))
+                passed = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(pcg.lastEnemyPlacementSummary))
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] lastEnemyPlacementSummary is empty.");
+            passed = false;
+        }
+        else if (!pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore") && !pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"))
+        {
+            Debug.LogError("[VillaPCG_v4 Validation] Enemy placement summary does not include PCG rule score names.");
+            passed = false;
+        }
+
+        if (passed)
+        {
+            Debug.Log($"[VillaPCG_v4 Validation] Passed. patrol={patrolEnemyCount}, stand={standEnemyCount}, routePoints={routePointCount}, routes={generatedRouteCount}\n{pcg.lastEnemyPlacementSummary}");
+        }
+
+        return passed;
+    }
+
+    bool ValidateGeneratedEnemyAgents(VillaPCG_v4 pcg, Transform enemyRoot, RouteManager routeManager)
+    {
+        bool passed = true;
+
+        for (int i = 0; i < enemyRoot.childCount; i++)
+        {
+            GameObject enemy = enemyRoot.GetChild(i).gameObject;
+            bool isPatrol = enemy.name.StartsWith("patrolEnemyTest_PCG_", System.StringComparison.Ordinal);
+            bool isStand = enemy.name.StartsWith("standEnemyTest_PCG_", System.StringComparison.Ordinal);
+
+            if (!isPatrol && !isStand)
+                continue;
+
+            Agent agent = enemy.GetComponent<Agent>();
+            AgentBrain brain = enemy.GetComponent<AgentBrain>();
+            AgentNavigator navigator = enemy.GetComponent<AgentNavigator>();
+
+            if (agent == null)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} is missing Agent.");
+                passed = false;
+            }
+
+            if (brain == null)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} is missing AgentBrain.");
+                passed = false;
+                continue;
+            }
+
+            if (navigator == null)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} is missing AgentNavigator.");
+                passed = false;
+            }
+            else
+            {
+                if (pcg.gridMap != null && navigator.gridMap != pcg.gridMap)
+                {
+                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} AgentNavigator.gridMap does not match VillaPCG_v4.gridMap.");
+                    passed = false;
+                }
+
+                if (pcg.waypointGraph != null && navigator.waypointGraph != pcg.waypointGraph)
+                {
+                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} AgentNavigator.waypointGraph does not match VillaPCG_v4.waypointGraph.");
+                    passed = false;
+                }
+            }
+
+            AgentDecision expectedDecision = isPatrol ? AgentDecision.PATROL : AgentDecision.LONGREST;
+            if (brain.defaultDecision != expectedDecision || brain.currentDecision != expectedDecision)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} decision mismatch. expected={expectedDecision}, default={brain.defaultDecision}, current={brain.currentDecision}.");
+                passed = false;
+            }
+
+            if (string.IsNullOrWhiteSpace(brain.defaultRouteName))
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} has an empty defaultRouteName.");
+                passed = false;
+                continue;
+            }
+
+            RouteDefinition route = routeManager.GetRoute(brain.defaultRouteName);
+            if (route == null)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route '{brain.defaultRouteName}' was not found in RouteManager.");
+                passed = false;
+                continue;
+            }
+
+            if (route.waypoints == null || route.waypoints.Count == 0)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route '{route.routeName}' has no waypoints.");
+                passed = false;
+                continue;
+            }
+
+            for (int routePointIndex = 0; routePointIndex < route.waypoints.Count; routePointIndex++)
+            {
+                if (route.waypoints[routePointIndex] == null || route.waypoints[routePointIndex].point == null)
+                {
+                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route '{route.routeName}' has a missing waypoint at index {routePointIndex}.");
+                    passed = false;
+                }
+                else if (!RoutePointNameHasRoomToken(route.routeName, route.waypoints[routePointIndex].point.name))
+                {
+                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route waypoint '{route.waypoints[routePointIndex].point.name}' does not include a room token. Run Generate + Validate Enemy PCG to rebuild stale generated routes.");
+                    passed = false;
+                }
+            }
+        }
+
+        return passed;
+    }
+
+    public static bool RoutePointNameHasRoomToken(string routeName, string pointName)
+    {
+        if (string.IsNullOrEmpty(routeName) || string.IsNullOrEmpty(pointName))
+            return false;
+
+        string prefix = routeName + "_";
+        if (!pointName.StartsWith(prefix, System.StringComparison.Ordinal))
+            return false;
+
+        string suffix = pointName.Substring(prefix.Length);
+        if (suffix.StartsWith("WP_", System.StringComparison.Ordinal) || suffix == "Hold")
+            return false;
+
+        return suffix.Contains("_WP_") || suffix.EndsWith("_Hold", System.StringComparison.Ordinal);
+    }
+
+    int CountChildrenWithNamePrefix(Transform root, string prefix)
+    {
+        if (root == null)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            if (root.GetChild(i).name.StartsWith(prefix, System.StringComparison.Ordinal))
+                count++;
+        }
+
+        return count;
+    }
+
+    int CountGeneratedEnemyRoutes(VillaPCG_v4 pcg)
+    {
+        RouteManager routeManager = Object.FindFirstObjectByType<RouteManager>();
+        if (routeManager == null || routeManager.allRoutes == null)
+            return 0;
+
+        int count = 0;
+        foreach (RouteDefinition route in routeManager.allRoutes)
+        {
+            if (route == null || string.IsNullOrEmpty(route.routeName))
+                continue;
+
+            bool hasConfiguredPrefix = !string.IsNullOrEmpty(pcg.generatedEnemyRoutePrefix)
+                && route.routeName.StartsWith(pcg.generatedEnemyRoutePrefix, System.StringComparison.Ordinal);
+
+            if (hasConfiguredPrefix || route.routeName.StartsWith("PCG_Enemy_", System.StringComparison.Ordinal))
+                count++;
+        }
+
+        return count;
+    }
+
     void SetWaypointGraphVisible(bool visible)
     {
         foreach (Object selectedTarget in targets)
         {
-            VillaPCG_v3 pcg = selectedTarget as VillaPCG_v3;
+            VillaPCG_v4 pcg = selectedTarget as VillaPCG_v4;
             if (pcg == null)
                 continue;
 
@@ -2317,7 +3422,7 @@ public class VillaPCG_v3Editor : Editor
     {
         foreach (Object selectedTarget in targets)
         {
-            VillaPCG_v3 pcg = selectedTarget as VillaPCG_v3;
+            VillaPCG_v4 pcg = selectedTarget as VillaPCG_v4;
             if (pcg == null)
                 continue;
 
@@ -2344,6 +3449,206 @@ public class VillaPCG_v3Editor : Editor
     {
         SetWaypointGraphVisible(visible);
         SetGridMapVisible(visible);
+    }
+}
+
+public static class VillaPCG_v4ValidationRunner
+{
+    const string UltimatePcgV2ScenePath = "Assets/Scenes/UltimatePCG_v2.unity";
+
+    [MenuItem("Tools/VillaPCG v4/Validate UltimatePCG_v2 Enemy PCG")]
+    public static void ValidateUltimatePcgV2EnemyPcg()
+    {
+        GenerateAndValidateUltimatePcgV2EnemyPcg(saveScene: false);
+    }
+
+    [MenuItem("Tools/VillaPCG v4/Generate Validate Save UltimatePCG_v2 Enemy PCG")]
+    public static void GenerateValidateSaveUltimatePcgV2EnemyPcg()
+    {
+        GenerateAndValidateUltimatePcgV2EnemyPcg(saveScene: true);
+    }
+
+    static void GenerateAndValidateUltimatePcgV2EnemyPcg(bool saveScene)
+    {
+        bool passed = false;
+
+        try
+        {
+            EditorSceneManager.OpenScene(UltimatePcgV2ScenePath);
+            VillaPCG_v4 pcg = Object.FindFirstObjectByType<VillaPCG_v4>();
+            if (pcg == null)
+                throw new System.InvalidOperationException($"No VillaPCG_v4 found in {UltimatePcgV2ScenePath}.");
+
+            pcg.Generate();
+            passed = ValidateGeneratedState(pcg, out string report);
+
+            if (passed && saveScene)
+            {
+                EditorUtility.SetDirty(pcg);
+                EditorSceneManager.MarkSceneDirty(pcg.gameObject.scene);
+
+                if (EditorSceneManager.SaveScene(pcg.gameObject.scene))
+                    Debug.Log($"[VillaPCG_v4 Batch Validation] Saved generated enemy PCG scene: {pcg.gameObject.scene.path}");
+                else
+                {
+                    Debug.LogError($"[VillaPCG_v4 Batch Validation] Failed to save generated enemy PCG scene: {pcg.gameObject.scene.path}");
+                    passed = false;
+                }
+            }
+
+            if (passed)
+                Debug.Log("[VillaPCG_v4 Batch Validation] Passed.\n" + report);
+            else
+                Debug.LogError("[VillaPCG_v4 Batch Validation] Failed.\n" + report);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogException(ex);
+            passed = false;
+        }
+
+        if (Application.isBatchMode)
+            EditorApplication.Exit(passed ? 0 : 1);
+    }
+
+    static bool ValidateGeneratedState(VillaPCG_v4 pcg, out string report)
+    {
+        System.Text.StringBuilder builder = new System.Text.StringBuilder();
+        bool passed = true;
+
+        Transform enemyRoot = pcg.transform.Find("Generated_EnemyAgents");
+        Transform routeRoot = pcg.transform.Find("Generated_EnemyRoutes");
+        RouteManager routeManager = Object.FindFirstObjectByType<RouteManager>();
+
+        int patrolEnemyCount = CountChildrenWithNamePrefix(enemyRoot, "patrolEnemyTest_PCG_");
+        int standEnemyCount = CountChildrenWithNamePrefix(enemyRoot, "standEnemyTest_PCG_");
+        int routePointCount = routeRoot != null ? routeRoot.childCount : 0;
+        int generatedRouteCount = CountGeneratedEnemyRoutes(pcg, routeManager);
+
+        AppendCheck(builder, enemyRoot != null, "Generated_EnemyAgents root exists", ref passed);
+        AppendCheck(builder, routeRoot != null, "Generated_EnemyRoutes root exists", ref passed);
+        AppendCheck(builder, patrolEnemyCount + standEnemyCount > 0, $"Generated enemy agents exist: patrol={patrolEnemyCount}, stand={standEnemyCount}", ref passed);
+        AppendCheck(builder, routePointCount > 0, $"Generated route points exist: {routePointCount}", ref passed);
+        AppendCheck(builder, generatedRouteCount > 0, $"Generated RouteManager routes exist: {generatedRouteCount}", ref passed);
+        AppendCheck(builder, !string.IsNullOrWhiteSpace(pcg.lastMapRuleSummary), "lastMapRuleSummary is populated", ref passed);
+        AppendCheck(builder, pcg.lastMapRuleSummary.Contains("map PCG rules") && pcg.lastMapRuleSummary.Contains("reachability"), "map summary contains rule and reachability data", ref passed);
+        AppendCheck(builder, !string.IsNullOrWhiteSpace(pcg.lastEnemyPlacementSummary), "lastEnemyPlacementSummary is populated", ref passed);
+        AppendCheck(builder, pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore") || pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"), "summary contains PCG score rule names", ref passed);
+
+        if (enemyRoot != null && routeManager != null)
+            passed &= ValidateGeneratedEnemyAgents(pcg, enemyRoot, routeManager, builder);
+        else
+            passed = false;
+
+        builder.AppendLine();
+        builder.AppendLine(pcg.lastMapRuleSummary);
+        builder.AppendLine(pcg.lastEnemyPlacementSummary);
+        report = builder.ToString();
+        return passed;
+    }
+
+    static void AppendCheck(System.Text.StringBuilder builder, bool condition, string label, ref bool passed)
+    {
+        builder.Append(condition ? "[PASS] " : "[FAIL] ");
+        builder.AppendLine(label);
+
+        if (!condition)
+            passed = false;
+    }
+
+    static bool ValidateGeneratedEnemyAgents(VillaPCG_v4 pcg, Transform enemyRoot, RouteManager routeManager, System.Text.StringBuilder builder)
+    {
+        bool passed = true;
+
+        for (int i = 0; i < enemyRoot.childCount; i++)
+        {
+            GameObject enemy = enemyRoot.GetChild(i).gameObject;
+            bool isPatrol = enemy.name.StartsWith("patrolEnemyTest_PCG_", System.StringComparison.Ordinal);
+            bool isStand = enemy.name.StartsWith("standEnemyTest_PCG_", System.StringComparison.Ordinal);
+            if (!isPatrol && !isStand)
+                continue;
+
+            Agent agent = enemy.GetComponent<Agent>();
+            AgentBrain brain = enemy.GetComponent<AgentBrain>();
+            AgentNavigator navigator = enemy.GetComponent<AgentNavigator>();
+            AgentDecision expectedDecision = isPatrol ? AgentDecision.PATROL : AgentDecision.LONGREST;
+
+            AppendCheck(builder, agent != null, $"{enemy.name} has Agent", ref passed);
+            AppendCheck(builder, brain != null, $"{enemy.name} has AgentBrain", ref passed);
+            AppendCheck(builder, navigator != null, $"{enemy.name} has AgentNavigator", ref passed);
+
+            if (brain == null)
+                continue;
+
+            AppendCheck(builder, brain.defaultDecision == expectedDecision && brain.currentDecision == expectedDecision, $"{enemy.name} decision is {expectedDecision}", ref passed);
+            AppendCheck(builder, !string.IsNullOrWhiteSpace(brain.defaultRouteName), $"{enemy.name} has defaultRouteName", ref passed);
+
+            if (!string.IsNullOrWhiteSpace(brain.defaultRouteName))
+            {
+                RouteDefinition route = routeManager.GetRoute(brain.defaultRouteName);
+                AppendCheck(builder, route != null, $"{enemy.name} route exists: {brain.defaultRouteName}", ref passed);
+
+                if (route != null)
+                {
+                    AppendCheck(builder, route.waypoints != null && route.waypoints.Count > 0, $"{enemy.name} route has waypoints", ref passed);
+                    if (route.waypoints != null)
+                    {
+                        for (int routePointIndex = 0; routePointIndex < route.waypoints.Count; routePointIndex++)
+                        {
+                            bool waypointExists = route.waypoints[routePointIndex] != null && route.waypoints[routePointIndex].point != null;
+                            AppendCheck(builder, waypointExists, $"{enemy.name} route waypoint {routePointIndex} exists", ref passed);
+
+                            if (waypointExists)
+                                AppendCheck(builder, VillaPCG_v4Editor.RoutePointNameHasRoomToken(route.routeName, route.waypoints[routePointIndex].point.name), $"{enemy.name} route waypoint {routePointIndex} includes room token; regenerate if stale", ref passed);
+                        }
+                    }
+                }
+            }
+
+            if (navigator != null)
+            {
+                AppendCheck(builder, pcg.gridMap == null || navigator.gridMap == pcg.gridMap, $"{enemy.name} navigator gridMap matches", ref passed);
+                AppendCheck(builder, pcg.waypointGraph == null || navigator.waypointGraph == pcg.waypointGraph, $"{enemy.name} navigator waypointGraph matches", ref passed);
+            }
+        }
+
+        return passed;
+    }
+
+    static int CountChildrenWithNamePrefix(Transform root, string prefix)
+    {
+        if (root == null)
+            return 0;
+
+        int count = 0;
+        for (int i = 0; i < root.childCount; i++)
+        {
+            if (root.GetChild(i).name.StartsWith(prefix, System.StringComparison.Ordinal))
+                count++;
+        }
+
+        return count;
+    }
+
+    static int CountGeneratedEnemyRoutes(VillaPCG_v4 pcg, RouteManager routeManager)
+    {
+        if (routeManager == null || routeManager.allRoutes == null)
+            return 0;
+
+        int count = 0;
+        foreach (RouteDefinition route in routeManager.allRoutes)
+        {
+            if (route == null || string.IsNullOrEmpty(route.routeName))
+                continue;
+
+            bool hasConfiguredPrefix = !string.IsNullOrEmpty(pcg.generatedEnemyRoutePrefix)
+                && route.routeName.StartsWith(pcg.generatedEnemyRoutePrefix, System.StringComparison.Ordinal);
+
+            if (hasConfiguredPrefix || route.routeName.StartsWith("PCG_Enemy_", System.StringComparison.Ordinal))
+                count++;
+        }
+
+        return count;
     }
 }
 #endif

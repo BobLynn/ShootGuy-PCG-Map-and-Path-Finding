@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEngine;
 
 [RequireComponent(typeof(Agent))] // 確保跟你的 Agent 綁定在一起
@@ -21,7 +19,7 @@ public class SensorySystem : MonoBehaviour
 
     private Agent agent;
 
-    void Start()
+    void Awake()
     {
         agent = GetComponent<Agent>();
     }
@@ -80,7 +78,7 @@ public class SensorySystem : MonoBehaviour
 
     private void FieldOfViewCheck()
     {
-        bool canSeePlayer = false;
+        bool sawPlayer = false;
 
         // 1. 先用球體重疊 (OverlapSphere) 找出範圍內所有的 Target (例如玩家)
         Collider[] targetsInViewRadius = Physics.OverlapSphere(transform.position, viewRadius, targetMask);
@@ -107,19 +105,20 @@ public class SensorySystem : MonoBehaviour
                 {
                     // 看到玩家了！
                     lastKnownPlayerPos = target.position;
-                    canSeePlayer = true;
+                    sawPlayer = true;
 
                     agent.brain.OnPlayerSpotted(target, dstToTarget);
                     break;
                 }
             }
         }
-        if (!canSeePlayer && agent.brain.currentDecision == AgentDecision.ATTACK)
+        if (!sawPlayer && canSeePlayer && agent.brain.currentDecision == AgentDecision.ATTACK)
         {
-            canSeePlayer = false;
-            UnityEngine.Debug.Log($"{gameObject.name} 失去了玩家的視線...");
+            LogDebug($"{gameObject.name} 失去了玩家的視線...");
             agent.brain.OnPlayerLost(lastKnownPlayerPos);
         }
+
+        canSeePlayer = sawPlayer;
     }
 
     // ==========================================
@@ -152,5 +151,13 @@ public class SensorySystem : MonoBehaviour
     {
         angleInDegrees += eulerY;
         return new Vector3(Mathf.Sin(angleInDegrees * Mathf.Deg2Rad), 0, Mathf.Cos(angleInDegrees * Mathf.Deg2Rad));
+    }
+
+    private void LogDebug(string message)
+    {
+        if (agent == null || !agent.showDebugLogs)
+            return;
+
+        UnityEngine.Debug.Log($"[SensorySystem] {message}");
     }
 }

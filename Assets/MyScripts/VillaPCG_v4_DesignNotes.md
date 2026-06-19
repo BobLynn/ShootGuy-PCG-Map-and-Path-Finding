@@ -1,0 +1,115 @@
+# VillaPCG v4 Design Notes
+
+## Goal
+
+VillaPCG v4 extends the PCG map generator so the generated villa layout also drives enemy placement. The intent is to reduce manual enemy setup and make the patrol/stand enemy layout explainable as PCG rules.
+
+## Map PCG Rules Used By Enemy Placement
+
+- Rooms have semantic security levels: `Public`, `SemiRestricted`, `Restricted`, and `Critical`.
+- The room graph is built from generated room connections, so each room has a graph distance from the player spawn room.
+- Goal rooms, final target rooms, exit rooms, and spawn rooms are known outputs of the map generator.
+- Room size is available from the generated room bounds.
+
+These map outputs are reused as enemy-placement inputs instead of placing enemies by fixed world coordinates.
+
+## Enemy Rule: RoomThreatScore
+
+Patrol candidates are sorted by a score derived from generated map data:
+
+- Higher security rooms receive higher priority.
+- Rooms deeper in the room graph from the player spawn receive higher priority.
+- Larger rooms receive higher priority because they can support patrol movement.
+- Primary goal and final target rooms receive extra priority.
+- Rooms near the player spawn are penalized by `enemySpawnExclusionRadius`.
+
+The highest scoring rooms receive `patrolEnemyTest_PCG_XX` agents. Each patrol enemy gets a generated route named `PCG_Enemy_Patrol_XX`.
+
+## Enemy Rule: DoorGuardScore
+
+Standing guards are generated from room connections:
+
+- The more secure side of a connection is selected as the guarded room.
+- Doors with a larger security transition are prioritized.
+- Doors near the primary goal receive extra priority.
+- Door guard positions are pushed inside the guarded room by `standingGuardDoorOffset`.
+- Positions too close to each other are filtered.
+
+The highest scoring door candidates receive `standEnemyTest_PCG_XX` agents. Each standing guard gets a generated single-point route named `PCG_Enemy_Stand_XX`.
+
+## Reproducibility
+
+Enemy candidate ordering uses deterministic tie-breakers after score comparison. Room candidates fall back to room name and room center, and door guard candidates fall back to room name and guard position. This keeps layouts stable for the same seed and generated map, even when two candidates receive the same score.
+
+## Runtime Integration
+
+- Generated routes are inserted into `RouteManager.allRoutes`.
+- `RouteManager.RebuildRouteDictionary()` makes newly generated routes available to `AgentBrain`.
+- Patrol enemies use `AgentDecision.PATROL`.
+- Standing enemies use `AgentDecision.LONGREST`.
+- `AgentNavigator` references are assigned to the generated `GridMap3D` and `WaypointGraph3D`.
+
+## Debug Evidence
+
+After generation, `VillaPCG_v4.lastMapRuleSummary` records:
+
+- seed, final villa style, and complexity
+- room count, connection count, and room graph node count
+- security-level distribution
+- player spawn, primary goal, secondary goal, exit, and final target rooms
+- reachability results for the generated level flow
+
+After generation, `VillaPCG_v4.lastEnemyPlacementSummary` records:
+
+- enemy name
+- generated route name
+- selected room
+- generated position
+- rule reason and score
+
+Scene gizmos also draw red spheres at generated enemy spawn positions when waypoint gizmos are visible.
+
+Generated route waypoint object names include the selected room token, for example `PCG_Enemy_Patrol_01_Target_Room_WP_01`, so the hierarchy also shows which PCG room rule produced the route.
+
+The Inspector button `Copy PCG Report` combines `lastMapRuleSummary` and `lastEnemyPlacementSummary` into one clipboard-ready report for course writeups or live PCG demonstrations.
+
+## Validation Workflow
+
+VillaPCG v4 includes two editor validation paths:
+
+- Inspector: select the `PCG_Villa_v4` object and press `Generate + Validate Enemy PCG`.
+- Inspector: press `Generate + Validate + Save Scene` to rebuild the generated enemy hierarchy and save the scene only after validation passes.
+- Inspector: press `Copy PCG Report` after generation to copy the current map-rule and enemy-layout evidence.
+- Menu: run `Tools > VillaPCG v4 > Validate UltimatePCG_v2 Enemy PCG`.
+- Menu: run `Tools > VillaPCG v4 > Generate Validate Save UltimatePCG_v2 Enemy PCG` to open `UltimatePCG_v2`, regenerate the enemy layout, validate it, and save the scene.
+
+The validation checks:
+
+- generated enemy and route roots exist
+- generated patrol and standing enemy objects exist
+- generated routes exist in `RouteManager`
+- `lastMapRuleSummary` contains map rule and reachability data
+- every generated enemy has `Agent`, `AgentBrain`, and `AgentNavigator`
+- patrol enemies use `AgentDecision.PATROL`
+- standing enemies use `AgentDecision.LONGREST`
+- every enemy has a route name that resolves through `RouteManager`
+- route waypoints are valid
+- route waypoint names include the selected room token
+- generated enemy navigator references match `VillaPCG_v4.gridMap` and `VillaPCG_v4.waypointGraph`
+- the placement summary includes PCG rule names such as `RoomThreatScore` or `DoorGuardScore`
+
+If validation reports route waypoint names without room tokens, the scene contains stale generated routes from an older v4 iteration. Run `Generate + Validate Enemy PCG` once to rebuild those generated route objects with the current naming rule.
+
+For automation, Unity can run:
+
+```bash
+Unity -batchmode -projectPath <project-path> -executeMethod VillaPCG_v4ValidationRunner.ValidateUltimatePcgV2EnemyPcg
+```
+
+This exits with code `0` on pass and `1` on failure when Unity licensing is available.
+
+To regenerate and save `UltimatePCG_v2` from automation:
+
+```bash
+Unity -batchmode -projectPath <project-path> -executeMethod VillaPCG_v4ValidationRunner.GenerateValidateSaveUltimatePcgV2EnemyPcg
+```

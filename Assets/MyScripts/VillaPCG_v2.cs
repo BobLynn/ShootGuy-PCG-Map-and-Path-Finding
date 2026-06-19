@@ -8,7 +8,7 @@ using StarterAssets;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class VillaPCG_v2 : MonoBehaviour
+public class VillaPCG_v2 : MonoBehaviour, ILevelNavigator
 {
     [Header("Seed")]
     public int seed = 12345;
@@ -443,11 +443,11 @@ public class VillaPCG_v2 : MonoBehaviour
     void GenerateApproachAlleyLayout()
     {
         Room stagingAlley = AddRoom("L1 Staging Alley", new Vector2(0, -10), new Vector2(8, 5), SecurityLevel.Public);
-        Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, -4), new Vector2(8, 6), SecurityLevel.Public);
-        Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, 3), new Vector2(7, 8), SecurityLevel.SemiRestricted);
-        Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(-7, 3), new Vector2(5, 5), SecurityLevel.SemiRestricted);
-        Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(7, 3), new Vector2(5, 5), SecurityLevel.Public);
-        Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, 10), new Vector2(8, 5), SecurityLevel.SemiRestricted);
+        Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, -4.5f), new Vector2(8, 6), SecurityLevel.Public);
+        Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, 2.5f), new Vector2(7, 8), SecurityLevel.SemiRestricted);
+        Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(-6, 2.5f), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(6, 2.5f), new Vector2(5, 5), SecurityLevel.Public);
+        Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, 9), new Vector2(8, 5), SecurityLevel.SemiRestricted);
 
         ConnectRooms(stagingAlley, streetGate, Side.North, Side.South);
         ConnectRooms(streetGate, maintenanceHall, Side.North, Side.South);
@@ -462,13 +462,13 @@ public class VillaPCG_v2 : MonoBehaviour
 
     void GenerateServiceWingLayout()
     {
-        Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, -12), new Vector2(8, 5), SecurityLevel.Public);
+        Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, -11), new Vector2(8, 5), SecurityLevel.Public);
         Room loadingBay = AddRoom("L2 Loading Bay", new Vector2(0, -5), new Vector2(12, 7), SecurityLevel.SemiRestricted);
-        Room recordsRoom = AddRoom("L2 Records Room", new Vector2(-9, -5), new Vector2(5, 5), SecurityLevel.Restricted);
-        Room workshop = AddRoom("L2 Workshop", new Vector2(9, -5), new Vector2(5, 5), SecurityLevel.SemiRestricted);
-        Room securityCheckpoint = AddRoom("L2 Security Checkpoint", new Vector2(0, 3), new Vector2(8, 6), SecurityLevel.Restricted);
-        Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(-7, 4), new Vector2(5, 5), SecurityLevel.SemiRestricted);
-        Room exitRoom = AddRoom("L2 Executive Lift Exit", new Vector2(0, 11), new Vector2(8, 5), SecurityLevel.Restricted);
+        Room recordsRoom = AddRoom("L2 Records Room", new Vector2(-8.5f, -5), new Vector2(5, 5), SecurityLevel.Restricted);
+        Room workshop = AddRoom("L2 Workshop", new Vector2(8.5f, -5), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room securityCheckpoint = AddRoom("L2 Security Checkpoint", new Vector2(0, 1.5f), new Vector2(8, 6), SecurityLevel.Restricted);
+        Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(-6.5f, 1.5f), new Vector2(5, 5), SecurityLevel.SemiRestricted);
+        Room exitRoom = AddRoom("L2 Executive Lift Exit", new Vector2(0, 7), new Vector2(8, 5), SecurityLevel.Restricted);
 
         ConnectRooms(serviceEntrance, loadingBay, Side.North, Side.South);
         ConnectRooms(loadingBay, securityCheckpoint, Side.North, Side.South);
@@ -1119,7 +1119,7 @@ public class VillaPCG_v2 : MonoBehaviour
         if (playerTransform == null)
         {
             Debug.LogWarning("[VillaPCG] Player was not found; auto search component with characterController.");
-            controller = Object.FindFirstObjectByType<CharacterController>();
+            controller = PlayerLocator.FindPlayerCharacterController();
             if (controller != null)
                 playerTransform = controller.transform;
             else
@@ -1152,8 +1152,7 @@ public class VillaPCG_v2 : MonoBehaviour
 
     Transform FindPlayerTransform()
     {
-        GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
-        return playerObject != null ? playerObject.transform : null;
+        return PlayerLocator.FindPlayerTransform(playerTag);
     }
 
     void OnDrawGizmos()

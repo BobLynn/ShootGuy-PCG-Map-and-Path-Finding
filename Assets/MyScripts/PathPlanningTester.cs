@@ -1,6 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 public class PathPlanningTester : MonoBehaviour
 {
     public enum SearchMode
@@ -24,21 +28,32 @@ public class PathPlanningTester : MonoBehaviour
 
     [HideInInspector]
     public List<Vector3> currentPath = new List<Vector3>();
+    [HideInInspector]
+    public string lastResultMessage = "Not tested yet.";
+    [HideInInspector]
+    public float lastPathCost = 0f;
+    [HideInInspector]
+    public int lastExpandedNodeCount = 0;
 
     [ContextMenu("Find Path")]
     public void FindPath()
     {
         currentPath.Clear();
+        lastPathCost = 0f;
+        lastExpandedNodeCount = 0;
+
+        if (graph == null)
+            AutoAssignGraph();
 
         if (graph == null)
         {
-            Debug.LogError("[PathPlanningTester] Graph is null. Assign NaviManager / WaypointGraph3D.");
+            ReportError("Graph is null. Assign NaviManager / WaypointGraph3D.");
             return;
         }
 
         if (startPoint == null || goalPoint == null)
         {
-            Debug.LogError("[PathPlanningTester] StartPoint or GoalPoint is null.");
+            ReportError("StartPoint or GoalPoint is null.");
             return;
         }
 
@@ -50,7 +65,7 @@ public class PathPlanningTester : MonoBehaviour
 
         if (graph.nodes == null || graph.nodes.Count == 0)
         {
-            Debug.LogError("[PathPlanningTester] Graph has no nodes. Generate WaypointGraph3D first.");
+            ReportError("Graph has no nodes. Generate WaypointGraph3D first.");
             return;
         }
 
@@ -59,27 +74,49 @@ public class PathPlanningTester : MonoBehaviour
 
         if (startNode < 0 || goalNode < 0)
         {
-            Debug.LogError($"[PathPlanningTester] Cannot find closest node. start={startNode}, goal={goalNode}");
+            ReportError($"Cannot find closest node. start={startNode}, goal={goalNode}");
             return;
         }
 
-        List<int> nodePath = Search(startNode, goalNode);
+        PathSearchResult searchResult = Search(startNode, goalNode);
 
-        if (nodePath == null || nodePath.Count == 0)
+        if (searchResult.nodePath == null || searchResult.nodePath.Count == 0)
         {
-            Debug.LogWarning("[PathPlanningTester] No path found.");
+            lastExpandedNodeCount = searchResult.expandedNodeCount;
+            ReportWarning($"No path found. Expanded nodes = {lastExpandedNodeCount}");
             return;
         }
 
-        foreach (int nodeIndex in nodePath)
+        foreach (int nodeIndex in searchResult.nodePath)
         {
             currentPath.Add(graph.GetNodePosition(nodeIndex));
         }
 
-        Debug.Log($"[PathPlanningTester] {searchMode} path found. Nodes = {currentPath.Count}");
+        lastPathCost = searchResult.totalCost;
+        lastExpandedNodeCount = searchResult.expandedNodeCount;
+        lastResultMessage = $"{searchMode} path found. Nodes = {currentPath.Count}, Cost = {lastPathCost:0.00}, Expanded = {lastExpandedNodeCount}";
+        Debug.Log($"[PathPlanningTester] {lastResultMessage}");
     }
 
-    private List<int> Search(int start, int goal)
+    [ContextMenu("Auto Assign Graph")]
+    public void AutoAssignGraph()
+    {
+        if (graph != null)
+            return;
+
+        graph = Object.FindFirstObjectByType<WaypointGraph3D>();
+    }
+
+    [ContextMenu("Clear Path")]
+    public void ClearPath()
+    {
+        currentPath.Clear();
+        lastPathCost = 0f;
+        lastExpandedNodeCount = 0;
+        lastResultMessage = "Path cleared.";
+    }
+
+    private PathSearchResult Search(int start, int goal)
     {
         int n = graph.nodes.Count;
 
@@ -108,7 +145,11 @@ public class PathPlanningTester : MonoBehaviour
 
             if (current == goal)
             {
-                return ReconstructPath(cameFrom, current);
+                return new PathSearchResult(
+                    ReconstructPath(cameFrom, current),
+                    gScore[current],
+                    CountClosedNodes(closed)
+                );
             }
 
             open.Remove(current);
@@ -138,7 +179,20 @@ public class PathPlanningTester : MonoBehaviour
             }
         }
 
-        return new List<int>();
+        return new PathSearchResult(new List<int>(), 0f, CountClosedNodes(closed));
+    }
+
+    private int CountClosedNodes(bool[] closed)
+    {
+        int count = 0;
+
+        for (int i = 0; i < closed.Length; i++)
+        {
+            if (closed[i])
+                count++;
+        }
+
+        return count;
     }
 
     private int GetLowestFScoreNode(List<int> open, float[] fScore)
@@ -186,6 +240,32 @@ public class PathPlanningTester : MonoBehaviour
         return path;
     }
 
+    private void ReportError(string message)
+    {
+        lastResultMessage = message;
+        Debug.LogError($"[PathPlanningTester] {message}");
+    }
+
+    private void ReportWarning(string message)
+    {
+        lastResultMessage = message;
+        Debug.LogWarning($"[PathPlanningTester] {message}");
+    }
+
+    private struct PathSearchResult
+    {
+        public readonly List<int> nodePath;
+        public readonly float totalCost;
+        public readonly int expandedNodeCount;
+
+        public PathSearchResult(List<int> nodePath, float totalCost, int expandedNodeCount)
+        {
+            this.nodePath = nodePath;
+            this.totalCost = totalCost;
+            this.expandedNodeCount = expandedNodeCount;
+        }
+    }
+
     private void OnDrawGizmos()
     {
         if (!drawPath || currentPath == null || currentPath.Count == 0)
@@ -207,3 +287,65 @@ public class PathPlanningTester : MonoBehaviour
         }
     }
 }
+
+#if UNITY_EDITOR
+[CustomEditor(typeof(PathPlanningTester))]
+public class PathPlanningTesterEditor : Editor
+{
+    public override void OnInspectorGUI()
+    {
+        DrawDefaultInspector();
+
+        PathPlanningTester tester = (PathPlanningTester)target;
+        int pathNodeCount = tester.currentPath != null ? tester.currentPath.Count : 0;
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Path Debug", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(tester.lastResultMessage, MessageType.Info);
+        EditorGUILayout.LabelField("Current Path Nodes", pathNodeCount.ToString());
+        EditorGUILayout.LabelField("Last Path Cost", tester.lastPathCost.ToString("0.00"));
+        EditorGUILayout.LabelField("Expanded Nodes", tester.lastExpandedNodeCount.ToString());
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Auto Assign Graph"))
+                RunTesterAction(tester, "Auto Assign Path Graph", t => t.AutoAssignGraph());
+
+            if (GUILayout.Button("Find Path"))
+                RunTesterAction(tester, "Find Debug Path", t => t.FindPath());
+        }
+
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            if (GUILayout.Button("Rebuild Graph + Find"))
+                RunTesterAction(tester, "Rebuild Graph And Find Path", RebuildGraphAndFindPath);
+
+            if (GUILayout.Button("Clear Path"))
+                RunTesterAction(tester, "Clear Debug Path", t => t.ClearPath());
+        }
+    }
+
+    static void RebuildGraphAndFindPath(PathPlanningTester tester)
+    {
+        bool previousRebuildSetting = tester.rebuildGraphBeforeSearch;
+        tester.rebuildGraphBeforeSearch = true;
+
+        try
+        {
+            tester.FindPath();
+        }
+        finally
+        {
+            tester.rebuildGraphBeforeSearch = previousRebuildSetting;
+        }
+    }
+
+    static void RunTesterAction(PathPlanningTester tester, string undoName, System.Action<PathPlanningTester> action)
+    {
+        Undo.RecordObject(tester, undoName);
+        action(tester);
+        EditorUtility.SetDirty(tester);
+        SceneView.RepaintAll();
+    }
+}
+#endif

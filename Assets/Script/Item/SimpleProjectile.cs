@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using UnityEngine;
 
 [RequireComponent(typeof(SphereCollider))]
@@ -9,14 +8,19 @@ public class SimpleProjectile : MonoBehaviour
     public int damage = 10;
 
     public bool onTriggerStimulus = true; // 是否在觸發時廣播刺激
+    public bool showDebugLogs = false;
     
     private Vector3 moveDirection;
     private bool isFired = false;
     private float currentLifeTimer = 0f; // 用來自己計時
+    private int obstacleLayer;
+    private bool hasLoggedMissingStimulusManager;
+    private bool hasLoggedMissingBulletPool;
 
     void Awake()
     {
-        GetComponent<SphereCollider>().isTrigger = true; 
+        GetComponent<SphereCollider>().isTrigger = true;
+        obstacleLayer = LayerMask.NameToLayer("Obstacle");
     }
 
     // 當子彈被 Pool 拿出來並 SetActive(true) 時會觸發
@@ -31,7 +35,7 @@ public class SimpleProjectile : MonoBehaviour
         isFired = true;
         if (callStimulus)
         {
-            StimulusManager.Instance.BroadcastAudioStimulus(transform.position, 30f, "BulletFire", gameObject);
+            TryBroadcastAudioStimulus(30f, "BulletFire");
         }
         // 移除了原本的 Destroy(gameObject, lifeTime);
     }
@@ -53,24 +57,24 @@ public class SimpleProjectile : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        UnityEngine.Debug.Log($"子彈碰到了 {other.gameObject.name} (Layer: {LayerMask.LayerToName(other.gameObject.layer)})");
-        if (other.gameObject.layer == LayerMask.NameToLayer("Obstacle"))
+        LogDebug($"Hit collider {other.gameObject.name} (Layer: {LayerMask.LayerToName(other.gameObject.layer)})");
+        if (other.gameObject.layer == obstacleLayer)
         {
             DisableAndReturn(); // 撞牆，回收
             if (onTriggerStimulus)
             {
-                StimulusManager.Instance.BroadcastAudioStimulus(transform.position, 20f, "BulletTrigger", gameObject);
+                TryBroadcastAudioStimulus(20f, "BulletTrigger");
             }
         }
         else if (other.CompareTag("Player"))
         {
-            UnityEngine.Debug.Log("Hit Player!");
+            LogDebug("Hit Player.");
             // other.GetComponent<PlayerHealth>().TakeDamage(damage);
             DisableAndReturn(); // 擊中玩家，回收
         }
         else if (other.CompareTag("Enemy"))
         {
-            UnityEngine.Debug.Log("Hit Enemy!");
+            LogDebug("Hit Enemy.");
             other.GetComponent<Agent>().TakeDamage(damage, transform.position); // 傳入子彈位置讓敵人知道從哪裡被打到的
             DisableAndReturn(); // 擊中敵人，回收
         }
@@ -80,6 +84,42 @@ public class SimpleProjectile : MonoBehaviour
     private void DisableAndReturn()
     {
         isFired = false;
-        BulletPool.Instance.ReturnBullet(gameObject);
+
+        if (BulletPool.Instance != null)
+        {
+            BulletPool.Instance.ReturnBullet(gameObject);
+            return;
+        }
+
+        if (!hasLoggedMissingBulletPool)
+        {
+            hasLoggedMissingBulletPool = true;
+            UnityEngine.Debug.LogWarning("[SimpleProjectile] Cannot return to pool: BulletPool is missing. Disabling projectile.");
+        }
+
+        gameObject.SetActive(false);
+    }
+
+    private void LogDebug(string message)
+    {
+        if (!showDebugLogs)
+            return;
+
+        UnityEngine.Debug.Log($"[SimpleProjectile] {message}");
+    }
+
+    private void TryBroadcastAudioStimulus(float radius, string stimulusType)
+    {
+        if (StimulusManager.Instance != null)
+        {
+            StimulusManager.Instance.BroadcastAudioStimulus(transform.position, radius, stimulusType, gameObject);
+            return;
+        }
+
+        if (hasLoggedMissingStimulusManager)
+            return;
+
+        hasLoggedMissingStimulusManager = true;
+        UnityEngine.Debug.LogWarning($"[SimpleProjectile] Cannot broadcast {stimulusType}: StimulusManager is missing.");
     }
 }

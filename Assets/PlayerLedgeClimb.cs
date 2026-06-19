@@ -12,13 +12,16 @@ public class PlayerLedgeClimb : MonoBehaviour
     [Header("Climb Settings")]
     public float climbDuration = 0.6f;
 
+    [Header("Debug")]
+    public bool showDebugLogs = false;
+
     private Ledge currentLedge;
     private bool isHanging;
     private bool isClimbing;
 
     private void Start()
     {
-        Debug.Log("PlayerLedgeClimb is running on: " + gameObject.name);
+        LogDebug("PlayerLedgeClimb is running on: " + gameObject.name);
     }
 
     private void Update()
@@ -78,7 +81,7 @@ public class PlayerLedgeClimb : MonoBehaviour
         if (animator != null)
             animator.SetBool("IsHanging", true);
 
-        Debug.Log("Grabbed ledge: " + ledge.name);
+        LogDebug("Grabbed ledge: " + ledge.name);
     }
 
     private IEnumerator ClimbUp()
@@ -126,7 +129,7 @@ public class PlayerLedgeClimb : MonoBehaviour
 
         isClimbing = false;
 
-        Debug.Log("Climb finished");
+        LogDebug("Climb finished");
     }
 
     private void DropFromLedge()
@@ -142,7 +145,7 @@ public class PlayerLedgeClimb : MonoBehaviour
         if (normalMoveScript != null)
             normalMoveScript.enabled = true;
 
-        Debug.Log("Dropped from ledge");
+        LogDebug("Dropped from ledge");
     }
 
     private void OnTriggerEnter(Collider other)
@@ -152,7 +155,7 @@ public class PlayerLedgeClimb : MonoBehaviour
         if (ledge != null)
         {
             currentLedge = ledge;
-            Debug.Log("Entered ledge: " + ledge.name);
+            LogDebug("Entered ledge: " + ledge.name);
         }
     }
 
@@ -173,7 +176,15 @@ public class PlayerLedgeClimb : MonoBehaviour
         if (ledge != null && ledge == currentLedge)
         {
             currentLedge = null;
-            Debug.Log("Exited ledge: " + ledge.name);
+            LogDebug("Exited ledge: " + ledge.name);
         }
+    }
+
+    private void LogDebug(string message)
+    {
+        if (!showDebugLogs)
+            return;
+
+        Debug.Log($"[PlayerLedgeClimb] {message}");
     }
 }

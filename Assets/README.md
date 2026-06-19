@@ -35,3 +35,7 @@
 * `W`, `A`, `S`, `D`: Character Movement.
 * `Right Mouse Button` (Hold): Look Lock, Shoulder Zoom, Toggle UI Crosshair, and Draw Weapon.
 * `Left Mouse Button` (Click while Aiming): Fire standard `Shoot` recoil clip.
+
+## Development Notes
+
+See [DEV_NOTES.md](DEV_NOTES.md) for engineering notes on PCG workflow, debugging tools, guard clauses, singleton lifecycle, and Unity git hygiene.

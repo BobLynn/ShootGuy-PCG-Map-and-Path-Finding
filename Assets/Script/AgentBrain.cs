@@ -1,11 +1,15 @@
 using UnityEngine;
 using KevinIglesias;
+using System.Collections.Generic;
 [RequireComponent(typeof(Agent))]
 public class AgentBrain : MonoBehaviour
 {
     private Agent agent;
     private Vector3 spawnPosition;
     private Vector3 spawnForward;
+    private bool warnedMissingCoreRefs = false;
+    private bool warnedMissingCombatRefs = false;
+    private bool warnedMissingBulletPool = false;
 
     [Header("Current Decision")]
     public AgentDecision currentDecision = AgentDecision.PATROL;
@@ -65,14 +69,15 @@ public class AgentBrain : MonoBehaviour
     {
         agent = GetComponent<Agent>();
         agent.brain = this; // 互相綁定
-        agent.navigator = this.GetComponent<AgentNavigator>(); // 確保 Navigator 參照正確
-        agent.sensory = this.GetComponent<SensorySystem>(); // 確保 Sensory 參照正確
+        agent.navigator = GetComponent<AgentNavigator>(); // 確保 Navigator 參照正確
+        agent.sensory = GetComponent<SensorySystem>(); // 確保 Sensory 參照正確
 
         ApplyWeaponStats();
 
 
         // 建立一個隱藏的虛擬目標，當我們只需要 Agent 前往某個座標(而非追逐特定實體)時使用
         dummyTarget = new GameObject($"DummyTarget_{gameObject.name}");
+        dummyTarget.transform.SetParent(transform);
 
         // attackRange = agent.sensory.viewRadius * 0.6f; // 確保攻擊距離不超過視野距離，避免邏輯衝突
         
@@ -91,9 +96,21 @@ public class AgentBrain : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        if (dummyTarget != null)
+        {
+            Destroy(dummyTarget);
+            dummyTarget = null;
+        }
+    }
+
     // 在 AgentBrain.cs 中
     void Update()
     {
+        if (!CanRunBrain())
+            return;
+
         // 1. 執行高階行為決策 (Patrol, Investigate 等)
         switch (currentDecision)
         {
@@ -150,9 +167,7 @@ public class AgentBrain : MonoBehaviour
         if (validThreats.Count == 0) return transform.position;
         threatCenter /= validThreats.Count; // 算出威脅群的幾何中心
 
-        // ✨ 優化：在迴圈外先抓取場上所有的 Agent，避免在迴圈內重複取得消耗效能
-        // 實務上，若追求極致效能，可以在 Agent.cs 的 Awake/OnDestroy 維護一個 public static List<Agent> allAgents
-        Agent[] allAgents = FindObjectsByType<Agent>(FindObjectsSortMode.None);
+        IReadOnlyList<Agent> allAgents = Agent.ActiveAgents;
 
         // 1. 掃描周圍特定 Layer 的所有物理障礙物
         Collider[] obstacles = Physics.OverlapSphere(transform.position, hideSearchRadius, agent.navigator.ObstacleLayers);
@@ -285,7 +300,6 @@ public class AgentBrain : MonoBehaviour
         {
             if (currentDecision != AgentDecision.ATTACK)
             {
-                currentDecision = AgentDecision.ATTACK;
                 StartAttack(player);
             }
         }
@@ -408,10 +422,14 @@ public class AgentBrain : MonoBehaviour
         else
         {
             currentDodgePoint = CalculateDodgePoint();
-            dummyTarget.transform.position = currentDodgePoint;
+            Transform dummyTargetTransform = GetDummyTargetTransform();
+            if (dummyTargetTransform == null)
+                return;
+
+            dummyTargetTransform.position = currentDodgePoint;
             
             // 【修正】這裡才是正確設定導航目標的地方
-            agent.targetObject = dummyTarget.transform; 
+            agent.targetObject = dummyTargetTransform;
             agent.navigator.isNavigating = true;
             UnityEngine.Debug.Log($"{agent.Name} 執行死角規避：計算隱蔽點中。");
         }
@@ -458,7 +476,14 @@ public class AgentBrain : MonoBehaviour
                 if (fleeTimer >= 0.5f)
                 {
                     currentDodgePoint = CalculateDodgePoint();
-                    dummyTarget.transform.position = currentDodgePoint;
+                    Transform dummyTargetTransform = GetDummyTargetTransform();
+                    if (dummyTargetTransform == null)
+                    {
+                        EndFlee();
+                        return;
+                    }
+
+                    dummyTargetTransform.position = currentDodgePoint;
                     fleeTimer = 0f;
                 }
 
@@ -585,6 +610,9 @@ public class AgentBrain : MonoBehaviour
     /// </summary>
     private void ApplyWeaponStats()
     {
+        if (!CanUseCombatSetup())
+            return;
+
         switch (agent.currentWeapon)
         {
             case SoldierWeapons.AssaultRifle: // 步槍：中距離、瞄準快、射速高
@@ -616,6 +644,9 @@ public class AgentBrain : MonoBehaviour
 
     public void StartAttack(Transform target)
     {
+        if (!CanUseCombatSetup())
+            return;
+
         currentDecision = AgentDecision.ATTACK;
         agent.isWaiting = false;
         agent.targetObject = target;
@@ -632,6 +663,9 @@ public class AgentBrain : MonoBehaviour
 
     private void HandleAttack()
     {
+        if (!CanUseCombatSetup())
+            return;
+
         if (agent.targetObject == null) return;
     
         switch (combatPhase)
@@ -659,7 +693,7 @@ public class AgentBrain : MonoBehaviour
                 if (combatTimer >= (aimingTime - lockTime))
                 {
                     combatPhase = 1;
-                    UnityEngine.Debug.Log($"{agent.name} entering lock phase 1. Player has a brief window to dodge!");
+                    LogDebug($"{agent.name} entering lock phase 1. Player has a brief window to dodge!");
                     
                     // 記錄當下目標的方向，這就是等一下實體子彈要飛出去的絕對方向！
                     Vector3 targetPos = agent.targetObject.position + Vector3.up * 1f;
@@ -681,7 +715,7 @@ public class AgentBrain : MonoBehaviour
 
                 if (combatTimer >= aimingTime)
                 {
-                    UnityEngine.Debug.Log($"{agent.name} lock phase complete. Firing bullet!");
+                    LogDebug($"{agent.name} lock phase complete. Firing bullet!");
                     combatPhase = 2; // 時間到，準備擊發
                 }
                 // UnityEngine.Debug.Log($"Locking... Time: {combatTimer:F2}s, LockedDirection: {lockedDirection}");
@@ -718,16 +752,78 @@ public class AgentBrain : MonoBehaviour
 
     private void ShootBullet(Vector3 direction)
     {
+        if (!CanUseCombatSetup())
+            return;
+
+        if (BulletPool.Instance == null)
+        {
+            if (!warnedMissingBulletPool)
+            {
+                warnedMissingBulletPool = true;
+                UnityEngine.Debug.LogWarning($"[AgentBrain] {agent.name} cannot shoot because BulletPool is missing.");
+            }
+
+            return;
+        }
+
         agent.animator.SetTrigger("Shoot01");
         // 改成跟 Pool 借子彈：
         GameObject bullet = BulletPool.Instance.GetBullet(shootPoint.position, Quaternion.LookRotation(direction));
+
+        if (bullet == null)
+            return;
         
         if (bullet.TryGetComponent(out SimpleProjectile projectile))
         {
             projectile.Fire(direction, false);
         }
         
-        UnityEngine.Debug.Log($"{agent.name} Bang! Fired pooled bullet at locked direction.");   
+        LogDebug($"{agent.name} Bang! Fired pooled bullet at locked direction.");
+    }
+
+    private bool CanRunBrain()
+    {
+        if (agent != null && agent.navigator != null && agent.sensory != null)
+            return true;
+
+        if (!warnedMissingCoreRefs)
+        {
+            warnedMissingCoreRefs = true;
+            UnityEngine.Debug.LogWarning($"[AgentBrain] {name} is missing Agent, AgentNavigator, or SensorySystem; brain update is disabled.");
+        }
+
+        return false;
+    }
+
+    private bool CanUseCombatSetup()
+    {
+        if (agent != null && agent.sensory != null && agent.animator != null && shootPoint != null)
+            return true;
+
+        if (!warnedMissingCombatRefs)
+        {
+            warnedMissingCombatRefs = true;
+            UnityEngine.Debug.LogWarning($"[AgentBrain] {name} is missing SensorySystem, Animator, or shootPoint; combat setup is disabled.");
+        }
+
+        return false;
+    }
+
+    private void LogDebug(string message)
+    {
+        if (agent == null || !agent.showDebugLogs)
+            return;
+
+        UnityEngine.Debug.Log($"[AgentBrain] {message}");
+    }
+
+    private Transform GetDummyTargetTransform()
+    {
+        if (dummyTarget != null)
+            return dummyTarget.transform;
+
+        UnityEngine.Debug.LogWarning($"[AgentBrain] {name} is missing its dummy target; navigation request was skipped.");
+        return null;
     }
 
     // --- Investigate 邏輯 ---
@@ -758,11 +854,15 @@ public class AgentBrain : MonoBehaviour
         else if (forceStartPhase == 2)
         {
             agent.isTurningInPlace = false;
-            dummyTarget.transform.position = investigatePos;
-            agent.targetObject = dummyTarget.transform;
+            Transform dummyTargetTransform = GetDummyTargetTransform();
+            if (dummyTargetTransform == null)
+                return;
+
+            dummyTargetTransform.position = investigatePos;
+            agent.targetObject = dummyTargetTransform;
             agent.currentState = AgentState.SEEK;
             agent.navigator.isNavigating = true;
-            UnityEngine.Debug.Log("Investigation Phase 2: Moving to investigate position.");
+            LogDebug("Investigation Phase 2: Moving to investigate position.");
         }
         
     }
@@ -784,7 +884,7 @@ public class AgentBrain : MonoBehaviour
                 {
                     agent.isTurningInPlace = false;
                     investigatePhase = 1;
-                    UnityEngine.Debug.Log("Investigation Phase 1");
+                    LogDebug("Investigation Phase 1");
                 }
                 break;
 
@@ -798,11 +898,15 @@ public class AgentBrain : MonoBehaviour
                     investigatePhase = 2;
 
                     // 3. 用 Seek 行為追蹤刺激來源
-                    dummyTarget.transform.position = investigatePos;
-                    agent.targetObject = dummyTarget.transform;
+                    Transform dummyTargetTransform = GetDummyTargetTransform();
+                    if (dummyTargetTransform == null)
+                        return;
+
+                    dummyTargetTransform.position = investigatePos;
+                    agent.targetObject = dummyTargetTransform;
                     agent.currentState = AgentState.SEEK;
                     agent.navigator.isNavigating = true;
-                    UnityEngine.Debug.Log("Investigation Phase 2: Moving to investigate position.");
+                    LogDebug("Investigation Phase 2: Moving to investigate position.");
                 }
                 break;
 
@@ -925,13 +1029,13 @@ public class AgentBrain : MonoBehaviour
                 {
                     waitTimer = currentRoute.waypoints[currentRouteWaypointIndex].waitTime;
                     currentDecision = AgentDecision.SHORTREST;
-                    UnityEngine.Debug.Log($"Arrived at waypoint {currentRouteWaypointIndex}. Waiting for {waitTimer} seconds.");
+                    LogDebug($"Arrived at waypoint {currentRouteWaypointIndex}. Waiting for {waitTimer} seconds.");
                 }
                 else if (defaultDecision == AgentDecision.LONGREST)
                 {
                     waitTimer = 999f; // 無限等待，直到被外部事件打斷（例如玩家靠近觸發調查）
                     currentDecision = AgentDecision.LONGREST;
-                    UnityEngine.Debug.Log($"Arrived at rest point. Waiting indefinitely until disturbed.");
+                    LogDebug("Arrived at rest point. Waiting indefinitely until disturbed.");
                 }
                 
             }

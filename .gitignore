@@ -7,6 +7,9 @@
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
 
+# Unity auto-recovery scenes are local editor state, not source assets
+[Aa]ssets/_Recovery/
+
 # MemoryCaptures can get large
 [Mm]emoryCaptures/
 

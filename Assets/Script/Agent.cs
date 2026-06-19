@@ -1,6 +1,7 @@
 using UnityEngine;
 using KevinIglesias;
 using System.Collections; //Required for IEnumerator and Coroutines
+using System.Collections.Generic;
 
 [System.Flags]
 public enum AgentState 
@@ -18,10 +19,27 @@ public enum AgentDecision { LONGREST,SHORTREST, PATROL, CHASE, INVESTIGATE, RUN,
 
 public enum AgentType {GUARD, CIVILIAN, TARGET}
 [RequireComponent(typeof(CharacterController))] // 確保物件上有 CharacterController
+[RequireComponent(typeof(AgentLocomotion))]
+[RequireComponent(typeof(AgentNavigator))]
+[RequireComponent(typeof(AgentBrain))]
+[RequireComponent(typeof(SensorySystem))]
 public class Agent : MonoBehaviour
 {
+    private static readonly List<Agent> activeAgents = new List<Agent>();
+    public static IReadOnlyList<Agent> ActiveAgents => activeAgents;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetActiveAgents()
+    {
+        activeAgents.Clear();
+    }
+
     public string Name = "Agent";
     public AgentType agentType = AgentType.GUARD;
+
+    [Header("Debug")]
+    public bool showDebugLogs = false;
+
     [Header("Target & Strategy")]
     public Transform targetObject;
     public Transform[] threatObjects; // 可能的威脅來源（例如玩家、爆炸點等）
@@ -65,9 +83,40 @@ public class Agent : MonoBehaviour
     public bool isTurningInPlace = false; // 原地轉向標籤
     public Vector3 turnTargetPos;         // 原地轉向的目標點
 
-    public Vector3 velocity => locomotion.velocity;
+    public Vector3 velocity
+    {
+        get
+        {
+            if (locomotion != null)
+                return locomotion.velocity;
+
+            if (!warnedMissingLocomotion)
+            {
+                warnedMissingLocomotion = true;
+                Debug.LogWarning($"[Agent] {name} is missing AgentLocomotion; velocity defaults to zero.");
+            }
+
+            return Vector3.zero;
+        }
+    }
 
     [HideInInspector] public Animator animator; // 新增 Animator 參照
+    private bool warnedMissingLocomotion = false;
+    private bool warnedMissingAnimationRefs = false;
+    private bool warnedMissingBrain = false;
+
+    void OnEnable()
+    {
+        if (!activeAgents.Contains(this))
+        {
+            activeAgents.Add(this);
+        }
+    }
+
+    void OnDisable()
+    {
+        activeAgents.Remove(this);
+    }
 
     void Start()
     {
@@ -108,6 +157,9 @@ public class Agent : MonoBehaviour
 
     void Update()
     {
+        if (!CanUpdateAnimationState())
+            return;
+
         // 下面宣告的都是執行動畫時必要的常駐動畫參數，必須保持trigger才可以順利正確呼叫其他動畫
         if (currentWeapon != previousWeapon)
         {
@@ -180,7 +232,7 @@ public class Agent : MonoBehaviour
 
                 // 計算 Agent 正前方與傷害來源的夾角
                 float hitAngle = Vector3.SignedAngle(transform.forward, dirToSource, Vector3.up);
-                Debug.Log($"{name} was hit from angle: {hitAngle}");
+                LogDebug($"{name} was hit from angle: {hitAngle}");
 
                 // 3. 切割成四個 90 度的扇形區域來判斷
                 if (hitAngle >= -45f && hitAngle <= 45f)
@@ -208,19 +260,50 @@ public class Agent : MonoBehaviour
             // 賦值並執行死亡邏輯
             currentAction = deathAction;
             currentState = AgentState.NONE; // 死亡後清空所有行為狀態
-            brain.currentDecision = AgentDecision.LONGREST; // 死亡後進入休息狀態
+            if (brain != null)
+            {
+                brain.currentDecision = AgentDecision.LONGREST; // 死亡後進入休息狀態
+            }
+            else if (!warnedMissingBrain)
+            {
+                warnedMissingBrain = true;
+                Debug.LogWarning($"[Agent] {name} is missing AgentBrain; death decision state was not updated.");
+            }
+
             StartCoroutine(DelayDeath()); // 延遲死亡，讓動畫有時間播放完
         }
     }
 
     IEnumerator DelayDeath()
     {
-        Debug.Log($"{name} death timer started!");
+        LogDebug($"{name} death timer started!");
 
         // Pause execution for 2 seconds
         yield return new WaitForSeconds(2f);
 
         gameObject.SetActive(false);
-        Debug.Log($"{name} has died and disabled!");
+        LogDebug($"{name} has died and disabled!");
+    }
+
+    private bool CanUpdateAnimationState()
+    {
+        if (animator != null && soldierController != null)
+            return true;
+
+        if (!warnedMissingAnimationRefs)
+        {
+            warnedMissingAnimationRefs = true;
+            Debug.LogWarning($"[Agent] {name} is missing Animator or HumanSoldierController; animation state sync is disabled.");
+        }
+
+        return false;
+    }
+
+    private void LogDebug(string message)
+    {
+        if (!showDebugLogs)
+            return;
+
+        Debug.Log($"[Agent] {message}");
     }
 }

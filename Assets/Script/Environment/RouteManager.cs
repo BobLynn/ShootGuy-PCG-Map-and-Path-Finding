@@ -37,9 +37,24 @@ public class RouteManager : MonoBehaviour
         if (Instance != null && Instance != this) Destroy(this);
         else Instance = this;
 
-        // 初始化字典
+        RebuildRouteDictionary();
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
+
+    public void RebuildRouteDictionary()
+    {
+        routeDictionary.Clear();
+
         foreach (var route in allRoutes)
         {
+            if (route == null || string.IsNullOrEmpty(route.routeName))
+                continue;
+
             if (!routeDictionary.ContainsKey(route.routeName))
             {
                 routeDictionary.Add(route.routeName, route);
@@ -52,6 +67,9 @@ public class RouteManager : MonoBehaviour
     /// </summary>
     public RouteDefinition GetRoute(string name)
     {
+        if (!routeDictionary.ContainsKey(name))
+            RebuildRouteDictionary();
+
         if (routeDictionary.ContainsKey(name))
             return routeDictionary[name];
         

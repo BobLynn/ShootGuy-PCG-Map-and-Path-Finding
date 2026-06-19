@@ -34,6 +34,7 @@ public class AgentNavigator : MonoBehaviour
     public LayerMask DynamicObstacleLayers;
 
     private BaseBehaviorManager behaviorManager;
+    private bool warnedMissingNavigationRefs = false;
 
     void Awake()
     {
@@ -73,12 +74,14 @@ public class AgentNavigator : MonoBehaviour
     void Update()
     {
         float dt = Time.deltaTime;
+        if (!CanUpdateNavigation())
+            return;
 
         // 1. 如果大腦下令「發呆/等待」，強制煞車，不計算尋路
         if (agent.isWaiting || agent.currentState == AgentState.NONE)
         {
             // UnityEngine.Debug.Log("Waiting... slowing down... " + agent.brain.waitTimer);
-            agent.steeringForce = Vector3.Lerp(agent.velocity, -agent.velocity / dt, dt * 2f);
+            ApplyBrake(dt, true);
             return;
         }
         // if (agent.isWaiting || agent.currentState == AgentState.NONE)
@@ -98,10 +101,10 @@ public class AgentNavigator : MonoBehaviour
             flatTarget = new Vector3(agent.targetObject.position.x, 0, agent.targetObject.position.z);
             distanceToTarget = Vector3.Distance(flatPos, flatTarget);
 
-            Agent targetAgent = agent.targetObject.GetComponent<Agent>();
-            if (targetAgent != null) targetVelocity = targetAgent.velocity;
-            else if (agent.targetObject.GetComponent<Rigidbody>() != null)
-                targetVelocity = agent.targetObject.GetComponent<Rigidbody>().linearVelocity;
+            if (agent.targetObject.TryGetComponent(out Agent targetAgent))
+                targetVelocity = targetAgent.velocity;
+            else if (agent.targetObject.TryGetComponent(out Rigidbody targetRigidbody))
+                targetVelocity = targetRigidbody.linearVelocity;
         }
 
         // 3. 核心導航邏輯 (有路徑時)
@@ -130,9 +133,45 @@ public class AgentNavigator : MonoBehaviour
         // 4. 強制抵達煞車 (Arrive)
         if (agent.HasState(AgentState.ARRIVE) && distanceToTarget < waypointThreshold)
         {
-            agent.steeringForce = -agent.velocity / dt; // 強大反向力抵消速度
-            UnityEngine.Debug.Log("Arrived at target, applying strong brake.");
+            ApplyBrake(dt, false);
+            LogDebug("Arrived at target, applying strong brake.");
         }
+    }
+
+    private bool CanUpdateNavigation()
+    {
+        if (agent != null && pathfinder != null && behaviorManager != null)
+            return true;
+
+        if (!warnedMissingNavigationRefs)
+        {
+            warnedMissingNavigationRefs = true;
+            Debug.LogWarning($"[AgentNavigator] {name} is missing Agent, UniversalPathfinder, or BehaviorManager; navigation update is disabled.");
+        }
+
+        return false;
+    }
+
+    private void ApplyBrake(float dt, bool smoothBrake)
+    {
+        if (dt <= 0f)
+        {
+            agent.steeringForce = Vector3.zero;
+            return;
+        }
+
+        Vector3 brakeForce = -agent.velocity / dt;
+        agent.steeringForce = smoothBrake
+            ? Vector3.Lerp(agent.velocity, brakeForce, dt * 2f)
+            : brakeForce;
+    }
+
+    private void LogDebug(string message)
+    {
+        if (agent == null || !agent.showDebugLogs)
+            return;
+
+        Debug.Log($"[AgentNavigator] {message}");
     }
 
     // 將畫路徑的工作也移交給 Navigator

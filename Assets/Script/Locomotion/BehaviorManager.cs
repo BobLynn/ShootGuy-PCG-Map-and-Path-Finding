@@ -8,6 +8,8 @@ public abstract class BaseBehaviorManager
     protected Agent agent;
     protected AgentLocomotion locomotion => agent.locomotion;
     protected AgentNavigator navigator => agent.navigator;
+    private bool warnedMissingSteeringRefs = false;
+
     public BaseBehaviorManager(Agent agent) { this.agent = agent; }
     public abstract Vector3 Compute(Transform target, Vector3 targetVelocity, float dt);
     
@@ -21,6 +23,9 @@ public abstract class BaseBehaviorManager
     private int lastEvaluatedIndex = -1; // 記錄上次評估是哪一格
     protected Vector3 ComputeGoalSteering(Transform target, Vector3 targetVelocity)
     {
+        if (!CanComputeSteering())
+            return Vector3.zero;
+
         Vector3 targetPos = target != null ? target.position : agent.transform.position;
         Vector3 goalSteering = Vector3.zero;
 
@@ -32,7 +37,7 @@ public abstract class BaseBehaviorManager
                 FollowPathMode dynamicMode = Behaviors.EvaluatePathComplexity(agent.transform.position, navigator.currentPath, navigator.currentWaypointIndex,navigator.ObstacleLayers, locomotion.JumpHeight);
                 navigator.pathMode = dynamicMode; // 更新 Agent 的 pathMode 屬性
                 lastEvaluatedIndex = navigator.currentWaypointIndex; // 更新最後評估的 waypoint index
-                Debug.Log($"切換到節點 {navigator.currentWaypointIndex}，使用模式: {dynamicMode}");
+                LogDebug($"切換到節點 {navigator.currentWaypointIndex}，使用模式: {dynamicMode}");
             }
 
             goalSteering = Behaviors.FollowPath(
@@ -71,6 +76,29 @@ public abstract class BaseBehaviorManager
         
         return goalSteering;
     }
+
+    protected bool CanComputeSteering()
+    {
+        if (agent != null && agent.navigator != null && agent.locomotion != null)
+            return true;
+
+        if (!warnedMissingSteeringRefs)
+        {
+            warnedMissingSteeringRefs = true;
+            string agentName = agent != null ? agent.name : "Unknown Agent";
+            Debug.LogWarning($"[BehaviorManager] {agentName} is missing AgentNavigator or AgentLocomotion; steering output defaults to zero.");
+        }
+
+        return false;
+    }
+
+    protected void LogDebug(string message)
+    {
+        if (agent == null || !agent.showDebugLogs)
+            return;
+
+        Debug.Log($"[BehaviorManager] {message}");
+    }
 }
 
 // 1. 絕對仲裁 (Strict Arbitration) - 避障優先，若觸發避障則完全忽略目標
@@ -80,6 +108,9 @@ public class SteeringArbitrationManager : BaseBehaviorManager
 
     public override Vector3 Compute(Transform target, Vector3 targetVelocity, float dt)
     {
+        if (!CanComputeSteering())
+            return Vector3.zero;
+
         float epsilon = 0.1f;
         
         // 優先級 1：避障
@@ -112,6 +143,9 @@ public class BlendingArbitrationManager : BaseBehaviorManager
 
     public override Vector3 Compute(Transform target, Vector3 targetVelocity, float dt)
     {
+        if (!CanComputeSteering())
+            return Vector3.zero;
+
         float epsilon = 0.1f;
         Vector3 goalSteering = ComputeGoalSteering(target, targetVelocity);
         Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers);
@@ -135,6 +169,9 @@ public class WeightDrivenManager : BaseBehaviorManager
 
     public override Vector3 Compute(Transform target, Vector3 targetVelocity, float dt)
     {
+        if (!CanComputeSteering())
+            return Vector3.zero;
+
         Vector3 steering = Vector3.zero;
 
         // 計算避障 (動態權重：此處簡化為固定高權重，可另行擴充 WeightAdapter)

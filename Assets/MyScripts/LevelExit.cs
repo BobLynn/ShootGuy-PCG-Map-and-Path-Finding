@@ -1,11 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
-using StarterAssets;
 
 public class LevelExit : MonoBehaviour
 {
     public VillaPCG_v2 levelManager;
     public VillaPCG_v3 levelManagerV3;
+    public VillaPCG_v4 levelManagerV4;
     public int targetLevel = 2;
     public Key interactKey = Key.E;
     public float interactRadius = 2.2f;
@@ -13,6 +13,7 @@ public class LevelExit : MonoBehaviour
     public string prompt = "Press E to enter next level";
 
     private Transform player;
+    private ILevelNavigator levelNavigator;
     private bool activated;
     private GUIStyle promptStyle;
 
@@ -23,6 +24,11 @@ public class LevelExit : MonoBehaviour
 
         if (levelManagerV3 == null)
             levelManagerV3 = Object.FindFirstObjectByType<VillaPCG_v3>();
+
+        if (levelManagerV4 == null)
+            levelManagerV4 = Object.FindFirstObjectByType<VillaPCG_v4>();
+
+        levelNavigator = ResolveLevelNavigator();
     }
 
     void Update()
@@ -37,12 +43,37 @@ public class LevelExit : MonoBehaviour
 
         if (Keyboard.current != null && Keyboard.current[interactKey].wasPressedThisFrame)
         {
+            levelNavigator ??= ResolveLevelNavigator();
+            if (levelNavigator == null)
+            {
+                Debug.LogWarning("[LevelExit] No ILevelNavigator found. Assign a VillaPCG manager or add ILevelNavigator to the level manager.");
+                return;
+            }
+
             activated = true;
-            if (levelManagerV3 != null)
-                levelManagerV3.GoToLevel(targetLevel);
-            else if (levelManager != null)
-                levelManager.GoToLevel(targetLevel);
+            levelNavigator.GoToLevel(targetLevel);
         }
+    }
+
+    ILevelNavigator ResolveLevelNavigator()
+    {
+        if (levelManagerV4 != null)
+            return levelManagerV4;
+
+        if (levelManagerV3 != null)
+            return levelManagerV3;
+
+        if (levelManager != null)
+            return levelManager;
+
+        MonoBehaviour[] behaviours = Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None);
+        foreach (MonoBehaviour behaviour in behaviours)
+        {
+            if (behaviour is ILevelNavigator navigator)
+                return navigator;
+        }
+
+        return null;
     }
 
     void EnsurePlayerReference()
@@ -50,29 +81,7 @@ public class LevelExit : MonoBehaviour
         if (player != null)
             return;
 
-        GameObject playerObject = GameObject.FindGameObjectWithTag(playerTag);
-        if (playerObject != null)
-        {
-            player = playerObject.transform;
-            return;
-        }
-
-        ThirdPersonController thirdPersonController = Object.FindFirstObjectByType<ThirdPersonController>();
-        if (thirdPersonController != null)
-        {
-            player = thirdPersonController.transform;
-            return;
-        }
-
-        CharacterController[] controllers = Object.FindObjectsOfType<CharacterController>();
-        foreach (CharacterController controller in controllers)
-        {
-            if (controller.GetComponent<Agent>() != null)
-                continue;
-
-            player = controller.transform;
-            return;
-        }
+        player = PlayerLocator.FindPlayerTransform(playerTag);
     }
 
     bool IsPlayerInRange()
