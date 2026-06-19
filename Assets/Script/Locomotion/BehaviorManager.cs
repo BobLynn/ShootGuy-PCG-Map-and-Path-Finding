@@ -21,6 +21,7 @@ public abstract class BaseBehaviorManager
 
     // 計算目標導向力 (共用邏輯)
     private int lastEvaluatedIndex = -1; // 記錄上次評估是哪一格
+    private int lastEvaluatedPathHash = 0;
     protected Vector3 ComputeGoalSteering(Transform target, Vector3 targetVelocity)
     {
         if (!CanComputeSteering())
@@ -31,12 +32,36 @@ public abstract class BaseBehaviorManager
 
         if (navigator.isNavigating)
         {
+            if (navigator.currentPath == null || navigator.currentPath.Length == 0)
+            {
+                if (target == null)
+                {
+                    if (agent.velocity.sqrMagnitude > 0.01f && Time.deltaTime > 0f)
+                        return -agent.velocity / Time.deltaTime;
+
+                    return Vector3.zero;
+                }
+
+                if (agent.HasState(AgentState.PURSUE))
+                    return Behaviors.Pursue(agent.transform.position, targetPos, targetVelocity, agent.velocity, agent.maxSpeed);
+
+                if (agent.HasState(AgentState.ARRIVE))
+                    return Behaviors.Arrive(agent.transform.position, targetPos, agent.velocity, agent.maxSpeed, agent.navigator.arriveTargetRadius, agent.navigator.arriveSlowRadius);
+
+                return Behaviors.Seek(agent.transform.position, targetPos, agent.velocity, agent.maxSpeed);
+            }
+
+            if (navigator.currentWaypointIndex < 0 || navigator.currentWaypointIndex >= navigator.currentPath.Length)
+                navigator.currentWaypointIndex = 0;
+
             // 如果正在導航，則使用 FollowPath 行為
-            if (navigator.currentWaypointIndex != lastEvaluatedIndex)
+            int currentPathHash = navigator.currentPath.GetHashCode();
+            if (navigator.currentWaypointIndex != lastEvaluatedIndex || currentPathHash != lastEvaluatedPathHash)
             {
                 FollowPathMode dynamicMode = Behaviors.EvaluatePathComplexity(agent.transform.position, navigator.currentPath, navigator.currentWaypointIndex,navigator.ObstacleLayers, locomotion.JumpHeight);
                 navigator.pathMode = dynamicMode; // 更新 Agent 的 pathMode 屬性
                 lastEvaluatedIndex = navigator.currentWaypointIndex; // 更新最後評估的 waypoint index
+                lastEvaluatedPathHash = currentPathHash;
                 LogDebug($"切換到節點 {navigator.currentWaypointIndex}，使用模式: {dynamicMode}");
             }
 
@@ -114,7 +139,7 @@ public class SteeringArbitrationManager : BaseBehaviorManager
         float epsilon = 0.1f;
         
         // 優先級 1：避障
-        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers);
+        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers, drawDebug: agent.showDebugGizmos);
         if (avoidForce.magnitude > epsilon)
         {
             return Limit(avoidForce, agent.maxForce);
@@ -148,7 +173,7 @@ public class BlendingArbitrationManager : BaseBehaviorManager
 
         float epsilon = 0.1f;
         Vector3 goalSteering = ComputeGoalSteering(target, targetVelocity);
-        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers);
+        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers, drawDebug: agent.showDebugGizmos);
         Vector3 dynamicAvoidForce = Behaviors.DynamicAvoidance(agent.transform, agent.maxSpeed, navigator.DynamicAvoidanceRadius, navigator.DynamicObstacleLayers);
 
         if (avoidForce.magnitude > epsilon)
@@ -176,7 +201,7 @@ public class WeightDrivenManager : BaseBehaviorManager
 
         // 計算避障 (動態權重：此處簡化為固定高權重，可另行擴充 WeightAdapter)
         float avoidWeight = 2.0f;
-        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers);
+        Vector3 avoidForce = Behaviors.RaycastAvoidance(agent.transform, agent.velocity, agent.maxSpeed, navigator.ObstacleLayers, drawDebug: agent.showDebugGizmos);
         steering += avoidForce * avoidWeight;
 
         float dynamicAvoidWeight = 1.5f;

@@ -25,6 +25,9 @@ public class RouteManager : MonoBehaviour
 {
     public static RouteManager Instance { get; private set; }
 
+    [Header("Debug Display")]
+    public bool showRouteGizmos = true;
+
     [Header("All Game Routes")]
     [Tooltip("在這裡統一設定遊戲中所有的巡邏與逃跑路線")]
     public List<RouteDefinition> allRoutes = new List<RouteDefinition>();
@@ -80,6 +83,9 @@ public class RouteManager : MonoBehaviour
     // 視覺化：讓關卡設計師在編輯器裡看到所有的路線網
     private void OnDrawGizmos()
     {
+        if (!showRouteGizmos)
+            return;
+
         foreach (var route in allRoutes)
         {
             if (route.waypoints == null || route.waypoints.Count < 2) continue;

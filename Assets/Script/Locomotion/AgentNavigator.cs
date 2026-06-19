@@ -21,6 +21,14 @@ public class AgentNavigator : MonoBehaviour
     public float pathRecalculateInterval = 2.5f;
     private float pathRecalculateTimer = 0f;
 
+    [Header("Stuck Recovery")]
+    public float stuckSpeedThreshold = 0.15f;
+    public float stuckProgressEpsilon = 0.2f;
+    public float stuckTimeBeforeAnchorAdvance = 1.0f;
+    private float stuckTimer = 0f;
+    private float lastDistanceToAnchor = Mathf.Infinity;
+    private Vector3 lastRecoveryPosition;
+
     [Header("Follow Path Settings")]
     public FollowPathMode pathMode = FollowPathMode.LookAheadPredictive;
     public float predictTime = 0.5f;
@@ -41,6 +49,7 @@ public class AgentNavigator : MonoBehaviour
         agent = GetComponent<Agent>();
         pathfinder = GetComponent<UniversalPathfinder>();
         SetManager(managerType);
+        lastRecoveryPosition = transform.position;
     }
 
     public void SetManager(ManagerType type)
@@ -114,21 +123,38 @@ public class AgentNavigator : MonoBehaviour
             pathRecalculateTimer -= dt;
             if (pathRecalculateTimer <= 0f)
             {
-                List<Vector3> newPath = useGridMap 
-                    ? pathfinder.FindPath(gridMap, transform.position, agent.targetObject.position)
-                    : pathfinder.FindPath(waypointGraph, transform.position, agent.targetObject.position);
+                List<Vector3> newPath = null;
+
+                if (useGridMap && gridMap != null)
+                {
+                    newPath = pathfinder.FindPath(gridMap, transform.position, agent.targetObject.position);
+                }
+                else if (waypointGraph != null)
+                {
+                    newPath = pathfinder.FindPath(waypointGraph, transform.position, agent.targetObject.position);
+                }
 
                 if (newPath != null && newPath.Count > 0)
                 {
                     currentPath = newPath.ToArray();
-                    currentWaypointIndex = 0;
+                    currentWaypointIndex = FindBestPathAnchorIndex(currentPath);
+                    ResetStuckTracking();
                 }
+                else if (currentPath == null || currentPath.Length == 0)
+                {
+                    currentPath = null;
+                    currentWaypointIndex = 0;
+                    ResetStuckTracking();
+                }
+
                 pathRecalculateTimer = pathRecalculateInterval;
             }
 
         }
         agent.steeringForce = behaviorManager.Compute(agent.targetObject, targetVelocity, dt);
         agent.steeringForce.y = 0;
+
+        UpdateStuckRecovery(dt);
 
         // 4. 強制抵達煞車 (Arrive)
         if (agent.HasState(AgentState.ARRIVE) && distanceToTarget < waypointThreshold)
@@ -174,9 +200,150 @@ public class AgentNavigator : MonoBehaviour
         Debug.Log($"[AgentNavigator] {message}");
     }
 
+    private int FindBestPathAnchorIndex(Vector3[] path)
+    {
+        if (path == null || path.Length == 0)
+            return 0;
+
+        Vector3 currentPosition = transform.position;
+        int closestVisibleIndex = -1;
+        float closestVisibleDistance = Mathf.Infinity;
+        int closestIndex = 0;
+        float closestDistance = Mathf.Infinity;
+
+        for (int i = 0; i < path.Length; i++)
+        {
+            Vector3 flatDelta = new Vector3(path[i].x - currentPosition.x, 0f, path[i].z - currentPosition.z);
+            float sqrDistance = flatDelta.sqrMagnitude;
+
+            if (sqrDistance < closestDistance)
+            {
+                closestDistance = sqrDistance;
+                closestIndex = i;
+            }
+
+            if (!HasLineOfSightToPathPoint(path[i]))
+                continue;
+
+            if (sqrDistance < closestVisibleDistance)
+            {
+                closestVisibleDistance = sqrDistance;
+                closestVisibleIndex = i;
+            }
+        }
+
+        return closestVisibleIndex >= 0 ? closestVisibleIndex : closestIndex;
+    }
+
+    private void UpdateStuckRecovery(float dt)
+    {
+        if (!isNavigating || currentPath == null || currentPath.Length == 0 || agent.targetObject == null)
+        {
+            ResetStuckTracking();
+            return;
+        }
+
+        if (currentWaypointIndex < 0 || currentWaypointIndex >= currentPath.Length)
+        {
+            currentWaypointIndex = FindBestPathAnchorIndex(currentPath);
+            ResetStuckTracking();
+            return;
+        }
+
+        Vector3 anchor = currentPath[currentWaypointIndex];
+        Vector3 flatPos = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 flatAnchor = new Vector3(anchor.x, 0f, anchor.z);
+        float distanceToAnchor = Vector3.Distance(flatPos, flatAnchor);
+        Vector3 flatLastPos = new Vector3(lastRecoveryPosition.x, 0f, lastRecoveryPosition.z);
+        float actualDisplacement = Vector3.Distance(flatPos, flatLastPos);
+        float actualSpeed = dt > 0f ? actualDisplacement / dt : 0f;
+        bool madeProgress = distanceToAnchor < lastDistanceToAnchor - stuckProgressEpsilon;
+        bool anchorVisible = HasLineOfSightToPathPoint(anchor);
+
+        if (!anchorVisible && TryAdvanceToVisibleAnchor())
+        {
+            ResetStuckTracking();
+            LogDebug($"Advanced blocked path anchor to index {currentWaypointIndex}.");
+            return;
+        }
+        else if (!anchorVisible)
+        {
+            pathRecalculateTimer = 0f;
+            ResetStuckTracking();
+            LogDebug("Requested path recalculation because current anchor is blocked.");
+            return;
+        }
+
+        if (actualSpeed <= stuckSpeedThreshold && !madeProgress && distanceToAnchor > waypointThreshold)
+            stuckTimer += dt;
+        else
+            stuckTimer = 0f;
+
+        lastDistanceToAnchor = distanceToAnchor;
+        lastRecoveryPosition = transform.position;
+
+        if (stuckTimer < stuckTimeBeforeAnchorAdvance)
+            return;
+
+        if (TryAdvanceToVisibleAnchor())
+        {
+            LogDebug($"Advanced stuck path anchor to index {currentWaypointIndex}.");
+        }
+        else
+        {
+            pathRecalculateTimer = 0f;
+            LogDebug("Requested path recalculation after stuck recovery could not find a visible anchor.");
+        }
+
+        ResetStuckTracking();
+    }
+
+    private bool TryAdvanceToVisibleAnchor()
+    {
+        if (currentPath == null || currentPath.Length == 0)
+            return false;
+
+        for (int i = currentWaypointIndex + 1; i < currentPath.Length; i++)
+        {
+            if (HasLineOfSightToPathPoint(currentPath[i]))
+            {
+                currentWaypointIndex = i;
+                return true;
+            }
+        }
+
+        if (currentWaypointIndex < currentPath.Length - 1)
+        {
+            currentWaypointIndex++;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool HasLineOfSightToPathPoint(Vector3 point)
+    {
+        Vector3 rayStart = transform.position + Vector3.up * 1.0f;
+        Vector3 rayEnd = point + Vector3.up * 1.0f;
+        return !Physics.Linecast(rayStart, rayEnd, ObstacleLayers);
+    }
+
+    private void ResetStuckTracking()
+    {
+        stuckTimer = 0f;
+        lastDistanceToAnchor = Mathf.Infinity;
+        lastRecoveryPosition = transform.position;
+    }
+
     // 將畫路徑的工作也移交給 Navigator
     void OnDrawGizmos()
     {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        if (agent != null && !agent.showDebugGizmos)
+            return;
+
         if (currentPath != null && currentPath.Length > 0)
         {
             Gizmos.color = Color.green;

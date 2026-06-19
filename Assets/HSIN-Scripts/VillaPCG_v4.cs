@@ -15,6 +15,9 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public bool showWaypointGraph3D = true;
     public bool showGridMap3D = true;
 
+    [Header("Agent Debug Display")]
+    public bool showAgentDebugGizmos = true;
+
     [Header("Seed")]
     public int seed = 12345;
     public bool randomizeSeedOnPlay = false;
@@ -136,6 +139,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public Material floorMat;
     public Material wallMat;
     public Material restrictedFloorMat;
+    public Color restrictedFloorColor = new Color(1.0f, 0.93333334f, 0.54901963f);
     public Material coverMat;
 
     [Header("Layout Scale")]
@@ -152,19 +156,41 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     [Header("Enemy Auto Layout")]
     public bool generateEnemyAgents = true;
     public GameObject enemyAgentPrefab;
-    [Range(0, 8)]
+    [HideInInspector]
     public int maxPatrolEnemyCount = 4;
-    [Range(0, 10)]
+    [HideInInspector]
     public int maxStandEnemyCount = 6;
+    [Header("Enemy Count By Level")]
+    [Range(0, 16)]
+    public int level1PatrolEnemyCount = 1;
+    [Range(0, 16)]
+    public int level1StandEnemyCount = 2;
+    [Range(0, 16)]
+    public int level2PatrolEnemyCount = 2;
+    [Range(0, 16)]
+    public int level2StandEnemyCount = 3;
+    [Range(0, 16)]
+    public int level3PatrolEnemyCount = 8;
+    [Range(0, 16)]
+    public int level3StandEnemyCount = 10;
+    [Header("Patrol Behavior Variants")]
+    [Range(0, 8)]
+    public int roomPairPatrolEnemyCount = 2;
     public float enemySpawnHeight = 0.08f;
     public float enemyRoomInset = 2.2f;
+    public float patrolRouteCornerAvoidance = 3.2f;
     public float standingGuardDoorOffset = 2.0f;
     public float enemySpawnExclusionRadius = 6.0f;
     public float patrolWaypointWaitTime = 1.0f;
+    public float roomPairPatrolAnchorWaitTime = 3.5f;
+    public float roomPairPatrolAnchorInset = 2.6f;
     public string generatedEnemyRoutePrefix = "PCG_Enemy_";
+    [HideInInspector]
     public bool logEnemyPlacementSummary = true;
+    [HideInInspector]
     [TextArea(3, 8)]
     public string lastMapRuleSummary;
+    [HideInInspector]
     [TextArea(3, 8)]
     public string lastEnemyPlacementSummary;
 
@@ -208,6 +234,40 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         Critical
     }
 
+    public enum LayoutZone
+    {
+        Casual,
+        Restricted
+    }
+
+    static LayoutZone GetLayoutZoneForSecurity(SecurityLevel security)
+    {
+        switch (security)
+        {
+            case SecurityLevel.Public:
+                return LayoutZone.Casual;
+            case SecurityLevel.SemiRestricted:
+            case SecurityLevel.Restricted:
+            case SecurityLevel.Critical:
+                return LayoutZone.Restricted;
+            default:
+                return LayoutZone.Casual;
+        }
+    }
+
+    static string GetLayoutZoneLabel(LayoutZone layoutZone)
+    {
+        switch (layoutZone)
+        {
+            case LayoutZone.Casual:
+                return "Casual Zone";
+            case LayoutZone.Restricted:
+                return "Restricted Zone";
+            default:
+                return layoutZone.ToString();
+        }
+    }
+
     public enum FinalVillaStyle
     {
         Garden,
@@ -221,6 +281,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         public Vector2 center;
         public Vector2 size;
         public SecurityLevel security;
+        public LayoutZone layoutZone;
 
         public Room(string name, Vector2 center, Vector2 size, SecurityLevel security)
         {
@@ -228,6 +289,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             this.center = center;
             this.size = size;
             this.security = security;
+            this.layoutZone = VillaPCG_v4.GetLayoutZoneForSecurity(security);
         }
 
         public float Left => center.x - size.x * 0.5f;
@@ -254,6 +316,17 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         }
     }
 
+    class RoomPairPatrolCandidate
+    {
+        public Connection connection;
+        public Room roomA;
+        public Room roomB;
+        public Vector3 anchorA;
+        public Vector3 anchorB;
+        public float score;
+        public string reason;
+    }
+
     class GridRoom
     {
         public string name;
@@ -262,6 +335,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         public int gw;
         public int gh;
         public SecurityLevel security;
+        public LayoutZone layoutZone;
         public Room room;
 
         public GridRoom(string name, int gx, int gy, int gw, int gh, SecurityLevel security)
@@ -272,6 +346,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             this.gw = gw;
             this.gh = gh;
             this.security = security;
+            this.layoutZone = VillaPCG_v4.GetLayoutZoneForSecurity(security);
         }
 
         public int Left => gx;
@@ -361,6 +436,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         RebuildNavigationAfterGenerate();
 
         GenerateEnemyLayout();
+        ApplyAgentDebugDisplay();
 
         Physics.SyncTransforms();
 
@@ -566,8 +642,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         if (restrictedFloorMat == null)
         {
             restrictedFloorMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            restrictedFloorMat.color = new Color(0.45f, 0.35f, 0.35f);
         }
+        restrictedFloorMat.color = restrictedFloorColor;
 
         if (coverMat == null)
         {
@@ -632,10 +708,10 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         Room stagingAlley = AddRoom("L1 Staging Alley", new Vector2(0, stagingY), stagingSize, SecurityLevel.Public);
         Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, streetY), streetSize, SecurityLevel.Public);
-        Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, maintenanceY), maintenanceSize, SecurityLevel.SemiRestricted);
-        Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(generatorX, maintenanceY), generatorSize, SecurityLevel.SemiRestricted);
+        Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, maintenanceY), maintenanceSize, SecurityLevel.Restricted);
+        Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(generatorX, maintenanceY), generatorSize, SecurityLevel.Restricted);
         Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(supplyX, maintenanceY), supplySize, SecurityLevel.Public);
-        Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, exitY), exitSize, SecurityLevel.SemiRestricted);
+        Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, exitY), exitSize, SecurityLevel.Restricted);
 
         ConnectRooms(stagingAlley, streetGate, Side.North, Side.South);
         ConnectRooms(streetGate, maintenanceHall, Side.North, Side.South);
@@ -667,11 +743,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         float guardX = GetAdjacentCenter(0.0f, checkpointSize.x, guardSize.x, -1.0f);
 
         Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, serviceY), serviceSize, SecurityLevel.Public);
-        Room loadingBay = AddRoom("L2 Loading Bay", new Vector2(0, loadingY), loadingSize, SecurityLevel.SemiRestricted);
+        Room loadingBay = AddRoom("L2 Loading Bay", new Vector2(0, loadingY), loadingSize, SecurityLevel.Restricted);
         Room recordsRoom = AddRoom("L2 Records Room", new Vector2(recordsX, loadingY), recordsSize, SecurityLevel.Restricted);
-        Room workshop = AddRoom("L2 Workshop", new Vector2(workshopX, loadingY), workshopSize, SecurityLevel.SemiRestricted);
+        Room workshop = AddRoom("L2 Workshop", new Vector2(workshopX, loadingY), workshopSize, SecurityLevel.Restricted);
         Room securityCheckpoint = AddRoom("L2 Security Checkpoint", new Vector2(0, checkpointY), checkpointSize, SecurityLevel.Restricted);
-        Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(guardX, checkpointY), guardSize, SecurityLevel.SemiRestricted);
+        Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(guardX, checkpointY), guardSize, SecurityLevel.Restricted);
         Room exitRoom = AddRoom("L2 Executive Lift Exit", new Vector2(0, exitY), exitSize, SecurityLevel.Restricted);
 
         ConnectRooms(serviceEntrance, loadingBay, Side.North, Side.South);
@@ -802,20 +878,18 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         if (parent.security == SecurityLevel.Restricted || parent.security == SecurityLevel.Critical)
         {
-            if (roll < 0.55f) return SecurityLevel.Restricted;
-            if (roll < 0.85f) return SecurityLevel.SemiRestricted;
+            if (roll < 0.85f) return SecurityLevel.Restricted;
             return SecurityLevel.Critical;
         }
 
         if (roll < 0.32f) return SecurityLevel.Public;
-        if (roll < 0.72f) return SecurityLevel.SemiRestricted;
         if (roll < 0.94f) return SecurityLevel.Restricted;
         return SecurityLevel.Critical;
     }
 
     Vector2Int GetRandomFinalVillaRoomSize(SecurityLevel security)
     {
-        float sizeBias = security == SecurityLevel.Public ? 1.2f : security == SecurityLevel.SemiRestricted ? 1.0f : 0.86f;
+        float sizeBias = security == SecurityLevel.Public ? 1.2f : 0.86f;
         int width = Mathf.Clamp(Mathf.RoundToInt(Random.Range(2.0f, 6.6f) * sizeBias), 2, 8);
         int height = Mathf.Clamp(Mathf.RoundToInt(Random.Range(2.0f, 5.8f) * sizeBias), 2, 7);
         return new Vector2Int(width, height);
@@ -824,13 +898,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     string GetFinalVillaRoomName(int index, SecurityLevel security)
     {
         string[] publicNames = { "Tea Room", "Gallery", "Dining Hall", "Conservatory", "Veranda", "Pool Lounge" };
-        string[] semiNames = { "Kitchen", "Wine Room", "Spa", "Gym", "Pantry", "Media Den", "Workshop", "Laundry" };
         string[] restrictedNames = { "Library", "Private Study", "Guest Suite", "Staff Room", "Storage", "Observatory" };
         string[] criticalNames = { "Vault", "Security Office", "Master Suite", "Server Room", "Armory" };
 
         string[] names = publicNames;
-        if (security == SecurityLevel.SemiRestricted) names = semiNames;
-        else if (security == SecurityLevel.Restricted) names = restrictedNames;
+        if (security == SecurityLevel.Restricted) names = restrictedNames;
         else if (security == SecurityLevel.Critical) names = criticalNames;
 
         return names[Random.Range(0, names.Length)] + " " + index.ToString("00");
@@ -1130,6 +1202,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         int semiRestrictedCount = CountRoomsBySecurity(SecurityLevel.SemiRestricted);
         int restrictedCount = CountRoomsBySecurity(SecurityLevel.Restricted);
         int criticalCount = CountRoomsBySecurity(SecurityLevel.Critical);
+        int casualZoneCount = CountRoomsByLayoutZone(LayoutZone.Casual);
+        int restrictedZoneCount = CountRoomsByLayoutZone(LayoutZone.Restricted);
 
         bool canReachPrimary = !string.IsNullOrEmpty(playerSpawnRoomName)
             && !string.IsNullOrEmpty(primaryGoalRoomName)
@@ -1142,6 +1216,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         summary.AppendLine($"Level {currentLevel} map PCG rules: seed={seed}, style={finalVillaStyle}, complexity={finalVillaComplexity}");
         summary.AppendLine($"rooms={rooms.Count}, connections={connections.Count}, roomGraphNodes={roomGraph.Count}");
         summary.AppendLine($"security: public={publicCount}, semiRestricted={semiRestrictedCount}, restricted={restrictedCount}, critical={criticalCount}");
+        summary.AppendLine($"layoutZones: casual={casualZoneCount}, restricted={restrictedZoneCount}");
         summary.AppendLine($"flow: spawn={GetSafeRuleName(playerSpawnRoomName)}, primaryGoal={GetSafeRuleName(primaryGoalRoomName)}, secondaryGoal={GetSafeRuleName(secondaryGoalRoomName)}");
         summary.AppendLine($"objectives: levelExit={GetSafeRuleName(levelExitRoom != null ? levelExitRoom.name : null)}, finalTarget={GetSafeRuleName(finalTargetRoom != null ? finalTargetRoom.name : null)}");
         summary.AppendLine($"reachability: spawnToPrimary={canReachPrimary}, primaryToSecondary={canReachSecondary}");
@@ -1160,6 +1235,18 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         foreach (Room room in rooms)
         {
             if (room.security == security)
+                count++;
+        }
+
+        return count;
+    }
+
+    int CountRoomsByLayoutZone(LayoutZone layoutZone)
+    {
+        int count = 0;
+        foreach (Room room in rooms)
+        {
+            if (room.layoutZone == layoutZone)
                 count++;
         }
 
@@ -1510,7 +1597,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         labelObj.transform.position = new Vector3(r.center.x, 0.05f, r.center.y);
 
         TextMesh text = labelObj.AddComponent<TextMesh>();
-        text.text = r.name + "\n" + r.security.ToString();
+        text.text = r.name + "\n" + GetLayoutZoneLabel(r.layoutZone) + "\n" + r.security.ToString();
         text.characterSize = 0.45f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
@@ -1611,20 +1698,48 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         List<Room> patrolRooms = GetEnemyCandidateRooms(true);
         SortRoomsByEnemyPlacementScore(patrolRooms, true);
 
-        int patrolCount = Mathf.Min(GetPatrolEnemyBudget(), patrolRooms.Count);
-        for (int i = 0; i < patrolCount; i++)
+        int patrolBudget = GetPatrolEnemyBudget();
+        int generatedPatrolCount = 0;
+        for (int i = 0; i < patrolRooms.Count && generatedPatrolCount < patrolBudget; i++)
         {
             Room room = patrolRooms[i];
-            string routeName = generatedEnemyRoutePrefix + "Patrol_" + (i + 1).ToString("00");
+            string routeName = generatedEnemyRoutePrefix + "Patrol_" + (generatedPatrolCount + 1).ToString("00");
             RouteDefinition route = CreatePatrolRoute(routeManager, routeRoot.transform, routeName, room);
 
             if (route.waypoints.Count > 0 && route.waypoints[0].point != null)
             {
                 Vector3 spawnPosition = route.waypoints[0].point.position + Vector3.up * enemySpawnHeight;
                 Quaternion spawnRotation = Quaternion.LookRotation(GetRoomFacingDirection(room, spawnPosition), Vector3.up);
-                GameObject enemy = CreateEnemyInstance(prefab, "patrolEnemyTest_PCG_" + (i + 1).ToString("00"), spawnPosition, spawnRotation, enemyRoot.transform);
+                GameObject enemy = CreateEnemyInstance(prefab, "patrolEnemyTest_PCG_" + (generatedPatrolCount + 1).ToString("00"), spawnPosition, spawnRotation, enemyRoot.transform);
                 ConfigureEnemyAgent(enemy, route.routeName, AgentDecision.PATROL);
                 RecordEnemyPlacement(placements, enemy.name, route.routeName, room, spawnPosition, GetRoomPlacementReason(room, true));
+                generatedPatrolCount++;
+            }
+        }
+
+        HashSet<Room> roomsUsedByPairPatrol = new HashSet<Room>();
+        List<RoomPairPatrolCandidate> pairPatrolCandidates = BuildRoomPairPatrolCandidates();
+        int generatedPairPatrolCount = 0;
+        for (int i = 0; i < pairPatrolCandidates.Count && generatedPairPatrolCount < roomPairPatrolEnemyCount; i++)
+        {
+            RoomPairPatrolCandidate candidate = pairPatrolCandidates[i];
+            if (roomsUsedByPairPatrol.Contains(candidate.roomA) || roomsUsedByPairPatrol.Contains(candidate.roomB))
+                continue;
+
+            string routeName = generatedEnemyRoutePrefix + "PairPatrol_" + (generatedPairPatrolCount + 1).ToString("00");
+            RouteDefinition route = CreateRoomPairPatrolRoute(routeManager, routeRoot.transform, routeName, candidate);
+
+            if (route.waypoints.Count > 0 && route.waypoints[0].point != null)
+            {
+                Vector3 spawnPosition = route.waypoints[0].point.position + Vector3.up * enemySpawnHeight;
+                Quaternion spawnRotation = Quaternion.LookRotation(GetRoomFacingDirection(candidate.roomB, spawnPosition), Vector3.up);
+                GameObject enemy = CreateEnemyInstance(prefab, "patrolEnemyTest_PCG_" + (generatedPatrolCount + 1).ToString("00"), spawnPosition, spawnRotation, enemyRoot.transform);
+                ConfigureEnemyAgent(enemy, route.routeName, AgentDecision.PATROL);
+                RecordEnemyPlacement(placements, enemy.name, route.routeName, candidate.roomA, spawnPosition, candidate.reason);
+                roomsUsedByPairPatrol.Add(candidate.roomA);
+                roomsUsedByPairPatrol.Add(candidate.roomB);
+                generatedPairPatrolCount++;
+                generatedPatrolCount++;
             }
         }
 
@@ -1713,20 +1828,23 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     int GetPatrolEnemyBudget()
     {
-        if (maxPatrolEnemyCount <= 0)
-            return 0;
-
-        int levelBudget = currentLevel >= finalPcgLevel ? maxPatrolEnemyCount : currentLevel;
-        return Mathf.Clamp(levelBudget, 0, maxPatrolEnemyCount);
+        return Mathf.Max(0, GetEnemyCountForCurrentLevel(level1PatrolEnemyCount, level2PatrolEnemyCount, level3PatrolEnemyCount));
     }
 
     int GetStandEnemyBudget()
     {
-        if (maxStandEnemyCount <= 0)
-            return 0;
+        return Mathf.Max(0, GetEnemyCountForCurrentLevel(level1StandEnemyCount, level2StandEnemyCount, level3StandEnemyCount));
+    }
 
-        int levelBudget = currentLevel >= finalPcgLevel ? maxStandEnemyCount : currentLevel + 1;
-        return Mathf.Clamp(levelBudget, 0, maxStandEnemyCount);
+    int GetEnemyCountForCurrentLevel(int level1Count, int level2Count, int level3Count)
+    {
+        if (currentLevel <= 1)
+            return level1Count;
+
+        if (currentLevel == 2)
+            return level2Count;
+
+        return level3Count;
     }
 
     List<Room> GetEnemyCandidateRooms(bool patrolOnly)
@@ -1738,11 +1856,14 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             if (ShouldSkipEnemyRoom(room))
                 continue;
 
+            if (!CanGenerateEnemyInRoom(room))
+                continue;
+
             int securityWeight = GetSecurityWeight(room.security);
             if (patrolOnly && securityWeight < GetSecurityWeight(SecurityLevel.Restricted))
                 continue;
 
-            if (!patrolOnly && securityWeight < GetSecurityWeight(SecurityLevel.SemiRestricted))
+            if (!patrolOnly && securityWeight < GetSecurityWeight(SecurityLevel.Restricted))
                 continue;
 
             candidates.Add(room);
@@ -1753,7 +1874,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         foreach (Room room in rooms)
         {
-            if (!ShouldSkipEnemyRoom(room))
+            if (!ShouldSkipEnemyRoom(room) && CanGenerateEnemyInRoom(room))
                 candidates.Add(room);
         }
 
@@ -1810,7 +1931,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             return "unknown room";
 
         string role = patrolOnly ? "patrol" : "stand";
-        return $"RoomThreatScore/{role}: security={room.security}, graphDepth={GetRoomDepthFromSpawn(room.name)}, score={CalculateEnemyRoomScore(room, patrolOnly):0.0}";
+        return $"RoomThreatScore/{role}: zone={GetLayoutZoneLabel(room.layoutZone)}, security={room.security}, graphDepth={GetRoomDepthFromSpawn(room.name)}, score={CalculateEnemyRoomScore(room, patrolOnly):0.0}";
     }
 
     int GetRoomDepthFromSpawn(string roomName)
@@ -1866,6 +1987,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             return true;
 
         return false;
+    }
+
+    bool CanGenerateEnemyInRoom(Room room)
+    {
+        return room != null && room.layoutZone == LayoutZone.Restricted;
     }
 
     int GetSecurityWeight(SecurityLevel security)
@@ -1963,10 +2089,124 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         return point.transform;
     }
 
+    List<RoomPairPatrolCandidate> BuildRoomPairPatrolCandidates()
+    {
+        List<RoomPairPatrolCandidate> candidates = new List<RoomPairPatrolCandidate>();
+
+        foreach (Connection connection in connections)
+        {
+            if (connection == null || !CanGenerateEnemyInRoom(connection.a) || !CanGenerateEnemyInRoom(connection.b))
+                continue;
+
+            Vector3 anchorA = GetRoomPairPatrolAnchor(connection.doorWorldPos, connection.a);
+            Vector3 anchorB = GetRoomPairPatrolAnchor(connection.doorWorldPos, connection.b);
+            if (Vector3.Distance(anchorA, anchorB) < 1.5f)
+                continue;
+
+            RoomPairPatrolCandidate candidate = new RoomPairPatrolCandidate
+            {
+                connection = connection,
+                roomA = connection.a,
+                roomB = connection.b,
+                anchorA = anchorA,
+                anchorB = anchorB
+            };
+            candidate.score = CalculateRoomPairPatrolScore(candidate);
+            candidate.reason = GetRoomPairPatrolReason(candidate);
+            candidates.Add(candidate);
+        }
+
+        candidates.Sort(CompareRoomPairPatrolCandidates);
+        return candidates;
+    }
+
+    Vector3 GetRoomPairPatrolAnchor(Vector3 doorPosition, Room room)
+    {
+        Vector3 towardRoom = new Vector3(room.center.x - doorPosition.x, 0f, room.center.y - doorPosition.z);
+        if (towardRoom.sqrMagnitude < 0.01f)
+            towardRoom = new Vector3(room.center.x, 0f, room.center.y).normalized;
+
+        Vector3 anchor = doorPosition + towardRoom.normalized * roomPairPatrolAnchorInset;
+        return ClampPointInsideRoom(anchor, room);
+    }
+
+    float CalculateRoomPairPatrolScore(RoomPairPatrolCandidate candidate)
+    {
+        if (candidate == null || candidate.roomA == null || candidate.roomB == null)
+            return float.MinValue;
+
+        float score = CalculateEnemyRoomScore(candidate.roomA, true) + CalculateEnemyRoomScore(candidate.roomB, true);
+        score *= 0.5f;
+        score += Vector3.Distance(candidate.anchorA, candidate.anchorB) * 2.0f;
+
+        if (candidate.roomA.name == primaryGoalRoomName || candidate.roomB.name == primaryGoalRoomName)
+            score += 35f;
+
+        if (finalTargetRoom == candidate.roomA || finalTargetRoom == candidate.roomB)
+            score += 35f;
+
+        if (IsNearPlayerSpawn(new Vector2(candidate.anchorA.x, candidate.anchorA.z))
+            || IsNearPlayerSpawn(new Vector2(candidate.anchorB.x, candidate.anchorB.z)))
+        {
+            score -= 160f;
+        }
+
+        return score;
+    }
+
+    int CompareRoomPairPatrolCandidates(RoomPairPatrolCandidate a, RoomPairPatrolCandidate b)
+    {
+        int scoreCompare = b.score.CompareTo(a.score);
+        if (scoreCompare != 0)
+            return scoreCompare;
+
+        int roomACompare = string.Compare(a.roomA.name, b.roomA.name, System.StringComparison.Ordinal);
+        if (roomACompare != 0)
+            return roomACompare;
+
+        return string.Compare(a.roomB.name, b.roomB.name, System.StringComparison.Ordinal);
+    }
+
+    string GetRoomPairPatrolReason(RoomPairPatrolCandidate candidate)
+    {
+        if (candidate == null || candidate.roomA == null || candidate.roomB == null)
+            return "RoomPairPatrolScore: unknown room pair";
+
+        return $"RoomPairPatrolScore/patrol: rooms={candidate.roomA.name}<->{candidate.roomB.name}, zone={GetLayoutZoneLabel(candidate.roomA.layoutZone)}, wait={roomPairPatrolAnchorWaitTime:0.0}, score={candidate.score:0.0}";
+    }
+
+    RouteDefinition CreateRoomPairPatrolRoute(RouteManager routeManager, Transform routeRoot, string routeName, RoomPairPatrolCandidate candidate)
+    {
+        RouteDefinition route = new RouteDefinition
+        {
+            routeName = routeName,
+            isLoop = true
+        };
+
+        string roomAToken = SanitizeNameToken(candidate.roomA.name);
+        string roomBToken = SanitizeNameToken(candidate.roomB.name);
+        string pairToken = roomAToken + "_to_" + roomBToken;
+
+        route.waypoints.Add(new WaypointInfo
+        {
+            point = CreateRoutePoint(routeRoot, routeName + "_" + pairToken + "_WP_01", candidate.anchorA),
+            waitTime = roomPairPatrolAnchorWaitTime
+        });
+        route.waypoints.Add(new WaypointInfo
+        {
+            point = CreateRoutePoint(routeRoot, routeName + "_" + pairToken + "_WP_02", candidate.anchorB),
+            waitTime = roomPairPatrolAnchorWaitTime
+        });
+
+        routeManager.allRoutes.Add(route);
+        return route;
+    }
+
     Vector3[] GetPatrolPointsForRoom(Room room)
     {
-        float insetX = Mathf.Min(enemyRoomInset, room.size.x * 0.32f);
-        float insetZ = Mathf.Min(enemyRoomInset, room.size.y * 0.32f);
+        float routeInset = Mathf.Max(enemyRoomInset, patrolRouteCornerAvoidance);
+        float insetX = Mathf.Min(routeInset, room.size.x * 0.4f);
+        float insetZ = Mathf.Min(routeInset, room.size.y * 0.4f);
         float left = room.Left + insetX;
         float right = room.Right - insetX;
         float bottom = room.Bottom + insetZ;
@@ -1988,10 +2228,10 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         return new[]
         {
-            new Vector3(left, 0.05f, bottom),
-            new Vector3(right, 0.05f, bottom),
-            new Vector3(right, 0.05f, top),
-            new Vector3(left, 0.05f, top)
+            new Vector3(room.center.x, 0.05f, bottom),
+            new Vector3(right, 0.05f, room.center.y),
+            new Vector3(room.center.x, 0.05f, top),
+            new Vector3(left, 0.05f, room.center.y)
         };
     }
 
@@ -2002,7 +2242,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         foreach (Connection connection in connections)
         {
             Room guardRoom = GetMoreSecureRoom(connection.a, connection.b);
-            if (ShouldSkipEnemyRoom(guardRoom) || GetSecurityWeight(guardRoom.security) < GetSecurityWeight(SecurityLevel.SemiRestricted))
+            if (ShouldSkipEnemyRoom(guardRoom) || !CanGenerateEnemyInRoom(guardRoom))
                 continue;
 
             Vector3 door = connection.doorWorldPos;
@@ -2023,9 +2263,10 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         List<Room> fallbackRooms = GetEnemyCandidateRooms(false);
         SortRoomsByEnemyPlacementScore(fallbackRooms, false);
+        int standBudget = GetStandEnemyBudget();
         foreach (Room room in fallbackRooms)
         {
-            if (candidates.Count >= maxStandEnemyCount)
+            if (candidates.Count >= standBudget)
                 break;
 
             Vector3 position = new Vector3(room.center.x, 0.05f, room.center.y);
@@ -2079,7 +2320,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     string GetStandingGuardReason(Connection connection, Room guardRoom, Vector3 position)
     {
         Room otherRoom = connection.a == guardRoom ? connection.b : connection.a;
-        return $"DoorGuardScore: guards {guardRoom.name} door from {otherRoom.name}, security={guardRoom.security}, graphDepth={GetRoomDepthFromSpawn(guardRoom.name)}, score={CalculateStandingGuardScore(connection, guardRoom, position):0.0}";
+        return $"DoorGuardScore: guards {guardRoom.name} door from {otherRoom.name}, zone={GetLayoutZoneLabel(guardRoom.layoutZone)}, security={guardRoom.security}, graphDepth={GetRoomDepthFromSpawn(guardRoom.name)}, score={CalculateStandingGuardScore(connection, guardRoom, position):0.0}";
     }
 
     Room GetMoreSecureRoom(Room a, Room b)
@@ -2244,13 +2485,13 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         report.AppendLine("[Map Rules]");
         report.AppendLine(string.IsNullOrWhiteSpace(lastMapRuleSummary)
-            ? "No map summary generated yet. Run Generate + Validate Enemy PCG first."
+            ? "No map summary generated yet. Run Generate Current Level first."
             : lastMapRuleSummary.TrimEnd());
         report.AppendLine();
 
         report.AppendLine("[Enemy Layout]");
         report.AppendLine(string.IsNullOrWhiteSpace(lastEnemyPlacementSummary)
-            ? "No enemy placement summary generated yet. Run Generate + Validate Enemy PCG first."
+            ? "No enemy placement summary generated yet. Enable enemy generation, then run Generate Current Level first."
             : lastEnemyPlacementSummary.TrimEnd());
 
         return report.ToString();
@@ -2413,6 +2654,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     void OnValidate()
     {
         ApplyNavigationDebugDisplay();
+        ApplyAgentDebugDisplay();
     }
 
     void ApplyNavigationDebugDisplay()
@@ -2446,6 +2688,45 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         SetGridMap3DVisible(visible);
     }
 
+    void ApplyAgentDebugDisplay()
+    {
+        foreach (Agent agent in Object.FindObjectsByType<Agent>(FindObjectsSortMode.None))
+        {
+            if (agent != null)
+            {
+                agent.showDebugGizmos = showAgentDebugGizmos;
+
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    EditorUtility.SetDirty(agent);
+#endif
+            }
+        }
+
+        foreach (RouteManager routeManager in Object.FindObjectsByType<RouteManager>(FindObjectsSortMode.None))
+        {
+            if (routeManager != null)
+            {
+                routeManager.showRouteGizmos = showAgentDebugGizmos;
+
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    EditorUtility.SetDirty(routeManager);
+#endif
+            }
+        }
+    }
+
+    public void SetAgentDebugGizmosVisible(bool visible)
+    {
+        showAgentDebugGizmos = visible;
+        ApplyAgentDebugDisplay();
+
+#if UNITY_EDITOR
+        SceneView.RepaintAll();
+#endif
+    }
+
     void OnDrawGizmos()
     {
         if (!showWaypointGizmos)
@@ -2468,11 +2749,14 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             Gizmos.DrawLine(c.doorWorldPos + Vector3.up * 0.15f, b);
         }
 
-        Gizmos.color = Color.red;
-
-        foreach (Vector3 enemyPosition in generatedEnemyGizmoPositions)
+        if (showAgentDebugGizmos)
         {
-            Gizmos.DrawSphere(enemyPosition + Vector3.up * 0.6f, 0.45f);
+            Gizmos.color = Color.red;
+
+            foreach (Vector3 enemyPosition in generatedEnemyGizmoPositions)
+            {
+                Gizmos.DrawSphere(enemyPosition + Vector3.up * 0.6f, 0.45f);
+            }
         }
     }
 
@@ -2988,89 +3272,7 @@ public class VillaPCG_v4Editor : Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
-
-        EditorGUILayout.LabelField("Map Generation", EditorStyles.boldLabel);
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Generate Current Level"))
-                RunGenerationAction("Generate Current Villa Level", pcg => pcg.Generate());
-
-            if (GUILayout.Button("Clear Generated Villa"))
-                RunGenerationAction("Clear Generated Villa", pcg => pcg.ClearGeneratedVilla());
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Regenerate With New Seed"))
-                RunGenerationAction("Regenerate Villa With New Seed", pcg => pcg.RegenerateWithNewSeed());
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Generate + Validate Enemy PCG"))
-                RunGenerationAction("Generate And Validate Enemy PCG", pcg =>
-                {
-                    pcg.Generate();
-                    ValidateEnemyPcgLayout(pcg);
-                });
-
-            if (GUILayout.Button("Copy PCG Report"))
-                CopyPcgReport();
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Generate + Validate + Save Scene"))
-                GenerateValidateAndSaveSelectedScenes();
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Generate Level 1"))
-                RunGenerationAction("Generate Villa Level 1", pcg => pcg.GenerateLevelOne());
-
-            if (GUILayout.Button("Generate Level 2"))
-                RunGenerationAction("Generate Villa Level 2", pcg => pcg.GenerateLevelTwo());
-
-            if (GUILayout.Button("Generate Final PCG Level"))
-                RunGenerationAction("Generate Final PCG Villa Level", pcg => pcg.GenerateFinalPcgLevel());
-        }
-
-        EditorGUILayout.Space(8);
-
-        EditorGUILayout.LabelField("Navigation Debug Display", EditorStyles.boldLabel);
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Show Waypoint Graph 3D"))
-                SetWaypointGraphVisible(true);
-
-            if (GUILayout.Button("Hide Waypoint Graph 3D"))
-                SetWaypointGraphVisible(false);
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Show Grid Map 3D"))
-                SetGridMapVisible(true);
-
-            if (GUILayout.Button("Hide Grid Map 3D"))
-                SetGridMapVisible(false);
-        }
-
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Show Both"))
-                SetBothVisible(true);
-
-            if (GUILayout.Button("Hide Both"))
-                SetBothVisible(false);
-        }
-
-        EditorGUILayout.Space(8);
-
-        DrawPropertiesExcluding(serializedObject, "showWaypointGraph3D", "showGridMap3D");
+        DrawDefaultInspector();
 
         serializedObject.ApplyModifiedProperties();
     }
@@ -3227,7 +3429,9 @@ public class VillaPCG_v4Editor : Editor
             Debug.LogError("[VillaPCG_v4 Validation] lastEnemyPlacementSummary is empty.");
             passed = false;
         }
-        else if (!pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore") && !pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"))
+        else if (!pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore")
+            && !pcg.lastEnemyPlacementSummary.Contains("RoomPairPatrolScore")
+            && !pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"))
         {
             Debug.LogError("[VillaPCG_v4 Validation] Enemy placement summary does not include PCG rule score names.");
             passed = false;
@@ -3329,7 +3533,7 @@ public class VillaPCG_v4Editor : Editor
                 }
                 else if (!RoutePointNameHasRoomToken(route.routeName, route.waypoints[routePointIndex].point.name))
                 {
-                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route waypoint '{route.waypoints[routePointIndex].point.name}' does not include a room token. Run Generate + Validate Enemy PCG to rebuild stale generated routes.");
+                    Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route waypoint '{route.waypoints[routePointIndex].point.name}' does not include a room token. Run Generate Current Level to rebuild stale generated routes.");
                     passed = false;
                 }
             }
@@ -3456,13 +3660,11 @@ public static class VillaPCG_v4ValidationRunner
 {
     const string UltimatePcgV2ScenePath = "Assets/Scenes/UltimatePCG_v2.unity";
 
-    [MenuItem("Tools/VillaPCG v4/Validate UltimatePCG_v2 Enemy PCG")]
     public static void ValidateUltimatePcgV2EnemyPcg()
     {
         GenerateAndValidateUltimatePcgV2EnemyPcg(saveScene: false);
     }
 
-    [MenuItem("Tools/VillaPCG v4/Generate Validate Save UltimatePCG_v2 Enemy PCG")]
     public static void GenerateValidateSaveUltimatePcgV2EnemyPcg()
     {
         GenerateAndValidateUltimatePcgV2EnemyPcg(saveScene: true);
@@ -3533,7 +3735,12 @@ public static class VillaPCG_v4ValidationRunner
         AppendCheck(builder, !string.IsNullOrWhiteSpace(pcg.lastMapRuleSummary), "lastMapRuleSummary is populated", ref passed);
         AppendCheck(builder, pcg.lastMapRuleSummary.Contains("map PCG rules") && pcg.lastMapRuleSummary.Contains("reachability"), "map summary contains rule and reachability data", ref passed);
         AppendCheck(builder, !string.IsNullOrWhiteSpace(pcg.lastEnemyPlacementSummary), "lastEnemyPlacementSummary is populated", ref passed);
-        AppendCheck(builder, pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore") || pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"), "summary contains PCG score rule names", ref passed);
+        AppendCheck(builder,
+            pcg.lastEnemyPlacementSummary.Contains("RoomThreatScore")
+            || pcg.lastEnemyPlacementSummary.Contains("RoomPairPatrolScore")
+            || pcg.lastEnemyPlacementSummary.Contains("DoorGuardScore"),
+            "summary contains PCG score rule names",
+            ref passed);
 
         if (enemyRoot != null && routeManager != null)
             passed &= ValidateGeneratedEnemyAgents(pcg, enemyRoot, routeManager, builder);

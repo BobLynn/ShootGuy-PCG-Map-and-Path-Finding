@@ -96,7 +96,7 @@ public static class Behaviors
     }
 
     //射線避障 (Raycast Avoidance) - 使用 Unity 物理系統
-    public static Vector3 RaycastAvoidance(Transform agentTransform, Vector3 currentVelocity, float maxSpeed, LayerMask obstacleLayers, float baseLookAhead = 1f, float adaptiveLength = 1f)
+    public static Vector3 RaycastAvoidance(Transform agentTransform, Vector3 currentVelocity, float maxSpeed, LayerMask obstacleLayers, float baseLookAhead = 1f, float adaptiveLength = 1f, bool drawDebug = true)
     {
         float speedRatio = currentVelocity.magnitude / (maxSpeed + 0.1f);
         float dynamicLength = baseLookAhead + adaptiveLength * speedRatio;
@@ -131,12 +131,13 @@ public static class Behaviors
                 float weight = 1.0f - ratio;
                 combinedNormal += hit.normal * weight;
                 
-                // Debug 視覺化射線
-                Debug.DrawLine(rayOrigin, hit.point, Color.red);
+                if (drawDebug)
+                    Debug.DrawLine(rayOrigin, hit.point, Color.red);
             }
             else
             {
-                Debug.DrawRay(rayOrigin, dir * dynamicLength, Color.green);
+                if (drawDebug)
+                    Debug.DrawRay(rayOrigin, dir * dynamicLength, Color.green);
             }
         }
 
@@ -323,6 +324,11 @@ public static class Behaviors
         LayerMask obstacleLayers, 
         float rayHeightOffset = 1.0f)
     {
+        if (path == null || path.Length == 0)
+            return FollowPathMode.Strict;
+
+        currentIndex = Mathf.Clamp(currentIndex, 0, path.Length - 1);
+
         // 1. 如果已經是最後一個點，乖乖嚴格走到終點
         if (currentIndex >= path.Length - 1) return FollowPathMode.Strict;
 

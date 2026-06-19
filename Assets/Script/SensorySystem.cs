@@ -126,6 +126,12 @@ public class SensorySystem : MonoBehaviour
     // ==========================================
     private void OnDrawGizmos()
     {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        if (agent != null && !agent.showDebugGizmos)
+            return;
+
         // 畫出視野距離圓圈
         Gizmos.color = Color.white;
         Gizmos.DrawWireSphere(transform.position, viewRadius);

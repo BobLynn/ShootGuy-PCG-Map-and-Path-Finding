@@ -6,7 +6,11 @@ VillaPCG v4 extends the PCG map generator so the generated villa layout also dri
 
 ## Map PCG Rules Used By Enemy Placement
 
-- Rooms have semantic security levels: `Public`, `SemiRestricted`, `Restricted`, and `Critical`.
+- Rooms use two map layout zones for agent PCG: `Casual` and `Restricted`.
+- `Casual` rooms are normal traversal/social spaces.
+- `Restricted` rooms are controlled spaces where enemy agents and restricted-floor visuals are allowed.
+- Enemy agents may only be generated in rooms whose layout zone is `Restricted`.
+- Restricted floors use a red restricted color layer so these agent-eligible regions are visible in runtime/editor inspection.
 - The room graph is built from generated room connections, so each room has a graph distance from the player spawn room.
 - Goal rooms, final target rooms, exit rooms, and spawn rooms are known outputs of the map generator.
 - Room size is available from the generated room bounds.
@@ -17,25 +21,37 @@ These map outputs are reused as enemy-placement inputs instead of placing enemie
 
 Patrol candidates are sorted by a score derived from generated map data:
 
-- Higher security rooms receive higher priority.
+- Rooms outside the `Restricted` layout zone are rejected.
+- Restricted rooms that contain goals, targets, or strong tactical coverage receive higher priority.
 - Rooms deeper in the room graph from the player spawn receive higher priority.
 - Larger rooms receive higher priority because they can support patrol movement.
 - Primary goal and final target rooms receive extra priority.
 - Rooms near the player spawn are penalized by `enemySpawnExclusionRadius`.
 
-The highest scoring rooms receive `patrolEnemyTest_PCG_XX` agents. Each patrol enemy gets a generated route named `PCG_Enemy_Patrol_XX`.
+The highest scoring restricted rooms receive `patrolEnemyTest_PCG_XX` agents. Each patrol enemy gets a generated route named `PCG_Enemy_Patrol_XX`. Patrol waypoints are kept away from walls and corners to reduce wall-sticking cases.
+
+## Enemy Rule: RoomPairPatrolScore
+
+Additional patrol agents can use a two-room shuttle route alongside the normal single-room patrol loops:
+
+- Candidate routes are built from adjacent `Restricted` rooms.
+- One anchor is placed inside each room near the shared connection.
+- The route loops between the two anchors.
+- These anchors use a longer wait time than normal patrol waypoints.
+- The generated route name uses `PCG_Enemy_PairPatrol_XX`.
 
 ## Enemy Rule: DoorGuardScore
 
 Standing guards are generated from room connections:
 
-- The more secure side of a connection is selected as the guarded room.
-- Doors with a larger security transition are prioritized.
+- The `Restricted` side of a connection is selected as the guarded room.
+- Connections whose guarded room is outside the `Restricted` layout zone are rejected.
+- Doors that separate `Casual` and `Restricted` layout zones are prioritized.
 - Doors near the primary goal receive extra priority.
 - Door guard positions are pushed inside the guarded room by `standingGuardDoorOffset`.
 - Positions too close to each other are filtered.
 
-The highest scoring door candidates receive `standEnemyTest_PCG_XX` agents. Each standing guard gets a generated single-point route named `PCG_Enemy_Stand_XX`.
+The highest scoring restricted door candidates receive `standEnemyTest_PCG_XX` agents. Each standing guard gets a generated single-point route named `PCG_Enemy_Stand_XX`.
 
 ## Reproducibility
 
@@ -55,7 +71,7 @@ After generation, `VillaPCG_v4.lastMapRuleSummary` records:
 
 - seed, final villa style, and complexity
 - room count, connection count, and room graph node count
-- security-level distribution
+- layout-zone distribution
 - player spawn, primary goal, secondary goal, exit, and final target rooms
 - reachability results for the generated level flow
 
@@ -65,7 +81,7 @@ After generation, `VillaPCG_v4.lastEnemyPlacementSummary` records:
 - generated route name
 - selected room
 - generated position
-- rule reason and score
+- rule reason, layout zone, and score
 
 Scene gizmos also draw red spheres at generated enemy spawn positions when waypoint gizmos are visible.
 
@@ -96,7 +112,8 @@ The validation checks:
 - route waypoints are valid
 - route waypoint names include the selected room token
 - generated enemy navigator references match `VillaPCG_v4.gridMap` and `VillaPCG_v4.waypointGraph`
-- the placement summary includes PCG rule names such as `RoomThreatScore` or `DoorGuardScore`
+- the placement summary includes PCG rule names such as `RoomThreatScore`, `RoomPairPatrolScore`, or `DoorGuardScore`
+- generated agent rooms are in the `Restricted` layout zone
 
 If validation reports route waypoint names without room tokens, the scene contains stale generated routes from an older v4 iteration. Run `Generate + Validate Enemy PCG` once to rebuild those generated route objects with the current naming rule.
 

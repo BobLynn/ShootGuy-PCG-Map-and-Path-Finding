@@ -39,6 +39,7 @@ public class Agent : MonoBehaviour
 
     [Header("Debug")]
     public bool showDebugLogs = false;
+    public bool showDebugGizmos = true;
 
     [Header("Target & Strategy")]
     public Transform targetObject;

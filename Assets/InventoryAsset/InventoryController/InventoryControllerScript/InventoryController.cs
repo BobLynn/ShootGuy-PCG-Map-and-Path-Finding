@@ -58,6 +58,10 @@ namespace InventorySystem
         [SerializeField]
         private GameObject inventoryManagerObj; // Prefab for the inventory manager.
 
+        [Tooltip("AnchoredPosition offset from the canvas bottom-right corner. Negative X moves left; positive Y moves up.")]
+        [SerializeField]
+        private Vector2 inventoryBottomRightOffset = new Vector2(-240f, 160f);
+
         [SerializeField, HideInInspector]
         private List<GameObject> allInventoryUI = new List<GameObject>(); // Holds all inventory UI instances for each inventory created.
         private Dictionary<string, Inventory> inventoryManager = new Dictionary<string, Inventory>(); // Dictionary to map inventory names to their Inventory object.
@@ -111,6 +115,11 @@ namespace InventorySystem
             ToggleOnKeyInput();
         }
 
+        private void OnValidate()
+        {
+            PlaceAllInventoryUIsAtBottomRight();
+        }
+
         /// <summary>
         /// Uses <see cref="TestSetup"/> to check that the user has correctly set up the inventory
         /// If the user has set up inventory correctly, then the initiaization functions are run, loading the new inventories and deleting missing inventories
@@ -154,8 +163,6 @@ namespace InventorySystem
                 {
                     initializer.SetInitialized(true);
                     GameObject tempinventoryUI = Instantiate(inventoryManagerObj, transform.position, Quaternion.identity, UI);
-                    RectTransform UIRect = UI.GetComponent<RectTransform>();
-                    tempinventoryUI.transform.position = new Vector3(Random.Range(0.0f, UIRect.sizeDelta.x), Random.Range(0.0f, UIRect.sizeDelta.y), 0);
                     tempinventoryUI.SetActive(true);
                     tempinventoryUI.name = initializer.GetInventoryName();
                     allInventoryUI.Add(tempinventoryUI);
@@ -171,12 +178,29 @@ namespace InventorySystem
                     inventoryUI.SetInventory(ref curInventory);
                     inventoryUI.SetRowCol(initializer.GetRows(), initializer.GetCols());
                     inventoryUI.SetInventoryName(initializer.GetInventoryName());
+                    PlaceInventoryAtBottomRight(tempinventoryUI);
                     inventoryUI.UpdateInventoryUI();
                 }
             }
             foreach (GameObject inObjects in allInventoryUI)
             {
+                PlaceInventoryAtBottomRight(inObjects);
                 inObjects.GetComponent<InventoryUIManager>().UpdateInventoryUI();
+            }
+        }
+
+        private void PlaceAllInventoryUIsAtBottomRight()
+        {
+            PlaceInventoryAtBottomRight(inventoryManagerObj);
+
+            if (allInventoryUI == null)
+            {
+                return;
+            }
+
+            foreach (GameObject inventoryUI in allInventoryUI)
+            {
+                PlaceInventoryAtBottomRight(inventoryUI);
             }
         }
 
@@ -433,6 +457,7 @@ namespace InventorySystem
                     setActive = true;
                     InventoryUI.SetActive(true);
                 }
+                PlaceInventoryAtBottomRight(InventoryUI);
                 InventoryUIManager inventoryInstance = InventoryUI.GetComponent<InventoryUIManager>();
                 if (!inventoryUIDict.ContainsKey(inventoryInstance.GetInventoryName()))
                 {
@@ -458,6 +483,25 @@ namespace InventorySystem
                     InventoryUI.SetActive(false);
                 }
             }
+        }
+
+        private void PlaceInventoryAtBottomRight(GameObject inventoryUI)
+        {
+            if (inventoryUI == null)
+            {
+                return;
+            }
+
+            RectTransform inventoryRect = inventoryUI.GetComponent<RectTransform>();
+            if (inventoryRect == null)
+            {
+                return;
+            }
+
+            inventoryRect.anchorMin = new Vector2(1f, 0f);
+            inventoryRect.anchorMax = new Vector2(1f, 0f);
+            inventoryRect.pivot = new Vector2(0f, 0f);
+            inventoryRect.anchoredPosition = inventoryBottomRightOffset;
         }
 
         /// <summary>

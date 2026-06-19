@@ -1076,6 +1076,12 @@ public class AgentBrain : MonoBehaviour
     
     private void OnDrawGizmos()
     {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        if (agent != null && !agent.showDebugGizmos)
+            return;
+
         // 可視化調查點
         if (currentDecision == AgentDecision.INVESTIGATE)
         {
