@@ -9,6 +9,8 @@ VillaPCG v4 extends the PCG map generator so the generated villa layout also dri
 - Rooms use two map layout zones for agent PCG: `Casual` and `Restricted`.
 - `Casual` rooms are normal traversal/social spaces.
 - `Restricted` rooms are controlled spaces where enemy agents and restricted-floor visuals are allowed.
+- Generated rooms also create invisible area marker colliders on Unity layers named `CasualArea` and `RestrictedArea`.
+- The visible floor stays on the walkable navigation layer; the area marker layer is used by perception/gameplay checks.
 - Enemy agents may only be generated in rooms whose layout zone is `Restricted`.
 - Restricted floors use a red restricted color layer so these agent-eligible regions are visible in runtime/editor inspection.
 - The room graph is built from generated room connections, so each room has a graph distance from the player spawn room.
@@ -49,6 +51,7 @@ Standing guards are generated from room connections:
 - Doors that separate `Casual` and `Restricted` layout zones are prioritized.
 - Doors near the primary goal receive extra priority.
 - Door guard positions are pushed inside the guarded room by `standingGuardDoorOffset`.
+- If the guarded room already contains a single-room looping patrol enemy, standing candidates are placed at the room's four inset corners instead of behind or near the patrol route.
 - Positions too close to each other are filtered.
 
 The highest scoring restricted door candidates receive `standEnemyTest_PCG_XX` agents. Each standing guard gets a generated single-point route named `PCG_Enemy_Stand_XX`.
@@ -64,6 +67,7 @@ Enemy candidate ordering uses deterministic tie-breakers after score comparison.
 - Patrol enemies use `AgentDecision.PATROL`.
 - Standing enemies use `AgentDecision.LONGREST`.
 - `AgentNavigator` references are assigned to the generated `GridMap3D` and `WaypointGraph3D`.
+- `SensorySystem` probes the `CasualArea` layer under the player or audio stimulus. Players seen in `CasualArea` are ignored for combat, and non-combat audio in `CasualArea` does not start investigation.
 
 ## Debug Evidence
 

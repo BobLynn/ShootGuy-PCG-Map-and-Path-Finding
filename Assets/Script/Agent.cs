@@ -2,6 +2,7 @@ using UnityEngine;
 using KevinIglesias;
 using System.Collections; //Required for IEnumerator and Coroutines
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 
 [System.Flags]
 public enum AgentState 
@@ -15,7 +16,7 @@ public enum AgentState
     EVADE = 1 << 5     // 32 (預留給未來擴充)
 }
 // public enum AgentState { NONE, CHASE, ARRIVE, SEEK} 
-public enum AgentDecision { LONGREST,SHORTREST, PATROL, CHASE, INVESTIGATE, RUN, ATTACK }
+public enum AgentDecision { NONE, LONGREST,SHORTREST, PATROL, CHASE, INVESTIGATE, RUN, ATTACK }
 
 public enum AgentType {GUARD, CIVILIAN, TARGET}
 [RequireComponent(typeof(CharacterController))] // 確保物件上有 CharacterController
@@ -52,6 +53,7 @@ public class Agent : MonoBehaviour
     public float defaultSpeed = 5f;
     public float chaseSpeed = 8f;
     public float maxForce = 10f;
+    public bool playerfounded = false; 
 
     [Header("Weapon & Animation")]
     private SoldierWeapons previousWeapon = SoldierWeapons.AssaultRifle; // 讓你在 Inspector 選擇武器
@@ -83,6 +85,11 @@ public class Agent : MonoBehaviour
     public bool isWaiting = false;
     public bool isTurningInPlace = false; // 原地轉向標籤
     public Vector3 turnTargetPos;         // 原地轉向的目標點
+
+    // ✨ [新增] 戰術側步意圖標籤 (供 Brain 傳遞給 BehaviorManager)
+    [Header("Tactical Movement")]
+    public bool isStrafing = false;
+    public Vector3 strafeDirection = Vector3.zero;
 
     public Vector3 velocity
     {
@@ -271,11 +278,11 @@ public class Agent : MonoBehaviour
                 Debug.LogWarning($"[Agent] {name} is missing AgentBrain; death decision state was not updated.");
             }
 
-            StartCoroutine(DelayDeath()); // 延遲死亡，讓動畫有時間播放完
+            StartCoroutine(DelayDisappear()); // 延遲死亡，讓動畫有時間播放完
         }
     }
 
-    IEnumerator DelayDeath()
+    public IEnumerator DelayDisappear()
     {
         LogDebug($"{name} death timer started!");
 
@@ -308,3 +315,8 @@ public class Agent : MonoBehaviour
         Debug.Log($"[Agent] {message}");
     }
 }
+
+
+
+
+

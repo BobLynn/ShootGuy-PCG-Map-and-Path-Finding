@@ -180,6 +180,11 @@ public class VillaPCG_v4ControlPanelEditor : Editor
         int currentLevel = EditorGUILayout.IntSlider("Current Level", pcg.currentLevel, 1, Mathf.Max(1, pcg.finalPcgLevel));
 
         EditorGUILayout.Space(6);
+        EditorGUILayout.LabelField("Final Villa PCG", EditorStyles.boldLabel);
+        int finalVillaComplexity = EditorGUILayout.IntSlider("Final Villa Complexity", pcg.finalVillaComplexity, 40, 100);
+        VillaPCG_v4.FinalVillaStyle finalVillaStyle = (VillaPCG_v4.FinalVillaStyle)EditorGUILayout.EnumPopup("Final Villa Style", pcg.finalVillaStyle);
+
+        EditorGUILayout.Space(6);
         EditorGUILayout.LabelField("Enemy Count By Level", EditorStyles.boldLabel);
         int level1PatrolEnemyCount = EditorGUILayout.IntSlider("Level 1 Patrol", pcg.level1PatrolEnemyCount, 0, 16);
         int level1StandEnemyCount = EditorGUILayout.IntSlider("Level 1 Stand", pcg.level1StandEnemyCount, 0, 16);
@@ -198,6 +203,8 @@ public class VillaPCG_v4ControlPanelEditor : Editor
             Undo.RecordObject(pcg, "Edit Villa PCG Quick Settings");
             pcg.seed = seed;
             pcg.currentLevel = currentLevel;
+            pcg.finalVillaComplexity = finalVillaComplexity;
+            pcg.finalVillaStyle = finalVillaStyle;
             pcg.level1PatrolEnemyCount = level1PatrolEnemyCount;
             pcg.level1StandEnemyCount = level1StandEnemyCount;
             pcg.level2PatrolEnemyCount = level2PatrolEnemyCount;

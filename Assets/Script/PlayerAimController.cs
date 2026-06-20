@@ -11,8 +11,6 @@ public class PlayerAimController : MonoBehaviour
     [Header("Cameras")]
     [SerializeField] private GameObject normalCamera;
     [SerializeField] private GameObject aimCamera;
-    private CinemachineVirtualCamera normalCinemachine;
-    private CinemachineVirtualCamera aimCinemachine;
 
     [Header("Cinemachine Target")]
     [Tooltip("Drag the Main Camera GameObject here to read its direction.")]
@@ -39,11 +37,6 @@ public class PlayerAimController : MonoBehaviour
     [Tooltip("Drag your Canvas Crosshair Game Object here.")]
     [SerializeField] private GameObject uiCrosshair;
 
-    [Header("Debug")]
-    public bool showDebugLogs = false;
-    private bool hasLoggedMissingSetup;
-    private bool hasLoggedMissingFireSetup;
-
     private void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
@@ -60,14 +53,10 @@ public class PlayerAimController : MonoBehaviour
             weaponProp.SetActive(false);
         }
         player = GetComponent<Player>();
-        CacheCameraComponents();
     }
 
     private void Update()
     {
-        if (!CanUseAimControllerBasics())
-            return;
-
         // Safety check to make sure you dragged them into the inspector slots
         if (normalCamera == null || aimCamera == null) return;
 
@@ -77,11 +66,9 @@ public class PlayerAimController : MonoBehaviour
             cameraTransform = Camera.main.transform;
         }
 
-        if (normalCinemachine == null || aimCinemachine == null)
-            CacheCameraComponents();
-
-        if (normalCinemachine == null || aimCinemachine == null)
-            return;
+        // Grab the Cinemachine components off your GameObjects
+        var normalCinemachine = normalCamera.GetComponent<CinemachineVirtualCamera>();
+        var aimCinemachine = aimCamera.GetComponent<CinemachineVirtualCamera>();
 
         // Check if the mouse exists, then check the right button
         bool isRightClickPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
@@ -186,26 +173,21 @@ public class PlayerAimController : MonoBehaviour
     }
     private void ShootBullet(Vector3 direction)
     {
-        if (!CanUseFireSystems())
-            return;
-
         if (animator != null)
         {
             animator.SetTrigger("Shoot");
         }
         // 改成跟 Pool 借子彈：
         GameObject bullet = BulletPool.Instance.GetBullet(shootPoint.position, cameraTransform.rotation);
-        if (bullet == null)
-            return;
 
         if (bullet.TryGetComponent(out SimpleProjectile projectile))
         {
             projectile.Fire(direction, false);
-            LogDebug($"{player.playerName} fired pooled bullet.");
+            UnityEngine.Debug.Log($"{player.playerName} Bang! Fired pooled bullet at locked direction.");
         }
         else
         {
-            UnityEngine.Debug.LogWarning($"{player.playerName} failed to fire bullet: no SimpleProjectile component found on the pooled bullet.");
+            UnityEngine.Debug.Log($"{player.playerName} Failed to fire bullet: No SimpleProjectile component found on the pooled bullet.");
         }
         // 減少Player bullet數量
         player.bulletCount--;
@@ -215,77 +197,23 @@ public class PlayerAimController : MonoBehaviour
 
     private void TossCoin(Vector3 direction)
     {
-        if (!CanUseFireSystems())
-            return;
-
         // animator.SetTrigger("TossCoin");
         // 改成跟 Pool 借硬幣：
         GameObject coin = BulletPool.Instance.GetCoin(shootPoint.position, cameraTransform.rotation);
-        if (coin == null)
-            return;
-
         double tossForce = this.tossForce; // 使用公共屬性設定的力道
         Vector3 tossDirection = cameraTransform.forward + cameraTransform.up * 0.5f; // 往前加上一點向上的力道，讓硬幣有個漂亮的拋物線
 
         if (coin.TryGetComponent(out Coin coinComponent))
         {
             coinComponent.Toss(tossForce, tossDirection);
-            LogDebug($"{player.playerName} tossed pooled coin.");
+            UnityEngine.Debug.Log($"{player.playerName} Tossed pooled coin at locked direction.");
         }
         else
         {
-            UnityEngine.Debug.LogWarning($"{player.playerName} failed to toss coin: no Coin component found on the pooled coin.");
+            UnityEngine.Debug.Log($"{player.playerName} Failed to toss coin: No SimpleProjectile component found on the pooled coin.");
         }
         // 減少Player coin數量
         player.coinCount--;
         InventoryController.instance.RemoveItem("Hotbar", "Coin", 1);
-    }
-
-    private bool CanUseAimControllerBasics()
-    {
-        if (player != null && shootPoint != null)
-            return true;
-
-        if (!hasLoggedMissingSetup)
-        {
-            hasLoggedMissingSetup = true;
-            UnityEngine.Debug.LogWarning(
-                "[PlayerAimController] Missing required setup. " +
-                $"player={(player != null)}, shootPoint={(shootPoint != null)}"
-            );
-        }
-
-        return false;
-    }
-
-    private bool CanUseFireSystems()
-    {
-        if (BulletPool.Instance != null && InventoryController.instance != null)
-            return true;
-
-        if (!hasLoggedMissingFireSetup)
-        {
-            hasLoggedMissingFireSetup = true;
-            UnityEngine.Debug.LogWarning(
-                "[PlayerAimController] Missing firing systems. " +
-                $"bulletPool={(BulletPool.Instance != null)}, inventory={(InventoryController.instance != null)}"
-            );
-        }
-
-        return false;
-    }
-
-    private void LogDebug(string message)
-    {
-        if (!showDebugLogs)
-            return;
-
-        UnityEngine.Debug.Log($"[PlayerAimController] {message}");
-    }
-
-    private void CacheCameraComponents()
-    {
-        normalCinemachine = normalCamera != null ? normalCamera.GetComponent<CinemachineVirtualCamera>() : null;
-        aimCinemachine = aimCamera != null ? aimCamera.GetComponent<CinemachineVirtualCamera>() : null;
     }
 }

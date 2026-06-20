@@ -488,14 +488,15 @@ GameObject:
   - component: {fileID: 1910796639213926969}
   - component: {fileID: 8287008232518912295}
   - component: {fileID: 10795382029361816}
+  - component: {fileID: 3388586163097769211}
+  - component: {fileID: 1488010420884697601}
   - component: {fileID: 5051695800410918213}
   - component: {fileID: 8220551370696341714}
   - component: {fileID: 5432703986975572530}
-  - component: {fileID: 5320187101580806715}
   - component: {fileID: 6189130510793128820}
   - component: {fileID: 2134969853082724696}
   - component: {fileID: 7427228674114962989}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: Agent_v2
   m_TagString: Enemy
   m_Icon: {fileID: 0}
@@ -511,7 +512,7 @@ Transform:
   m_GameObject: {fileID: 2923476425529671473}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -12.292, y: -2.81371, z: -2.7614298}
+  m_LocalPosition: {x: -5.31, y: 0, z: -6.6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -603,16 +604,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Agent
   Name: Agent2
-  Type: Guard
-  agentType: 1
+  agentType: 0
+  showDebugLogs: 0
+  showDebugGizmos: 1
   targetObject: {fileID: 0}
   threatObjects: []
   defaultState: 1
-  currentState: 2
+  currentState: 1
   health: 100
   defaultSpeed: 5
   chaseSpeed: 10
-  maxForce: 20
+  maxForce: 15
+  playerfounded: 0
   currentMovement: 0
   currentWeapon: 4
   currentPosition: 0
@@ -628,7 +631,61 @@ MonoBehaviour:
   isWaiting: 0
   isTurningInPlace: 0
   turnTargetPos: {x: 0, y: 0, z: 0}
+  isStrafing: 0
+  strafeDirection: {x: 0, y: 0, z: 0}
   animator: {fileID: 0}
+--- !u!114 &3388586163097769211
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2923476425529671473}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0e6ee8c7996d25de594fa0e9bdf1ce99, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AgentActionController
+  defaultRouteName: TEST_ROUTE
+  startIndex: 0
+  currentRouteWaypointIndex: 0
+  waitTimer: 0
+  shootPoint: {fileID: 7145304402625349510}
+  attackRange: 0
+  aimingTime: 5
+  lockTime: 2
+  attackCooldown: 2
+  combatPhase: 0
+  reactionTime: 0.3
+  realTarget: {fileID: 0}
+  escapeEndpoint: {fileID: 0}
+  runToSpecificEndpoint: 0
+  fleeReactionTime: 0.5
+  hideSearchRadius: 25
+  distanceBehindObstacle: 2.5
+  coverCrowdRadius: 2
+  crowdPenaltyWeight: 15
+--- !u!114 &1488010420884697601
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2923476425529671473}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a289a343bbd7246ca8930580b4d45187, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AgentBrain
+  actionController: {fileID: 0}
+  currentDecision: 3
+  defaultDecision: 3
+  enableAdvancedTactics: 1
+  allyLayer:
+    serializedVersion: 2
+    m_Bits: 768
+  squadCommRadius: 30
+  isSuppressing: 0
 --- !u!114 &5051695800410918213
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -672,6 +729,9 @@ MonoBehaviour:
   useTieBreaking: 1
   maxJumpHeight: 0.5
   dropPenalty: 5
+  useDynamicObstacles: 1
+  dynamicPenaltyRadius: 3
+  maxDynamicPenalty: 15
 --- !u!114 &5432703986975572530
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -687,54 +747,24 @@ MonoBehaviour:
   pathfinder: {fileID: 0}
   gridMap: {fileID: 0}
   waypointGraph: {fileID: 0}
-  useGridMap: 1
+  useGridMap: 0
   isNavigating: 1
   currentPath: []
   currentWaypointIndex: 0
-  waypointThreshold: 0.5
-  pathRecalculateInterval: 2.5
-  pathMode: 2
-  predictTime: 0.5
+  waypointThreshold: 1.5
+  pathRecalculateInterval: 0.5
+  pathMode: 0
+  predictTime: 1
   managerType: 1
-  arriveTargetRadius: 20
-  arriveSlowRadius: 50
-  DynamicAvoidanceRadius: 5
+  arriveTargetRadius: 0.5
+  arriveSlowRadius: 1
+  DynamicAvoidanceRadius: 2
   ObstacleLayers:
     serializedVersion: 2
     m_Bits: 72
   DynamicObstacleLayers:
     serializedVersion: 2
-    m_Bits: 0
---- !u!114 &5320187101580806715
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2923476425529671473}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a289a343bbd7246ca8930580b4d45187, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AgentBrain
-  currentDecision: 0
-  defaultDecision: 0
-  defaultRouteName: single_point
-  startIndex: 0
-  currentRouteWaypointIndex: 0
-  waitTimer: 0
-  shootPoint: {fileID: 7145304402625349510}
-  aimingTime: 5
-  lockTime: 2
-  attackCooldown: 2
-  reactionTime: 0.3
-  escapeEndpoint: {fileID: 0}
-  runToSpecificEndpoint: 0
-  fleeReactionTime: 0.5
-  hideSearchRadius: 25
-  distanceBehindObstacle: 2.5
-  coverCrowdRadius: 2
-  crowdPenaltyWeight: 15
+    m_Bits: 512
 --- !u!114 &6189130510793128820
 MonoBehaviour:
   m_ObjectHideFlags: 0

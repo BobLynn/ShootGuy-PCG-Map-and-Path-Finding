@@ -18,6 +18,12 @@ public class UniversalPathfinder : MonoBehaviour
     public float maxJumpHeight = 0.5f;   // 容許的最大高低差 (例如 1.5 代表可以跳上小箱子)
     public float dropPenalty = 5.0f;     // 往下掉落的額外成本 (可選)
 
+    [Header("Dynamic Obstacle Avoidance (Influence Map)")]
+    public bool useDynamicObstacles = true;
+    public float dynamicPenaltyRadius = 3.0f; // 預測障礙物的影響半徑
+    public float maxDynamicPenalty = 15.0f;   // 核心區域的極大懲罰值
+
+
     // 取得啟發式代價 (H 值)
     private float GetHeuristic(GridNode current, GridNode goal, Vector3 startPos)
     {
@@ -69,7 +75,7 @@ public class UniversalPathfinder : MonoBehaviour
     }
 
     // 取得相鄰節點 (包含高低差檢測與防切西瓜)
-    private List<KeyValuePair<GridNode, float>> GetNeighbors(GridMap3D map, GridNode node)
+    private List<KeyValuePair<GridNode, float>> GetNeighbors(GridMap3D map, GridNode node, List<Vector3> predictedObstacles)
     {
         var neighbors = new List<KeyValuePair<GridNode, float>>();
         
@@ -110,7 +116,23 @@ public class UniversalPathfinder : MonoBehaviour
                     finalCost += dropPenalty; 
                 }
 
-                // TODO: 這裡可以加入你原本 Python 寫的「斜向切西瓜 (Corner-cutting)」防護邏輯
+                // ==========================================
+                // ✨ 動態障礙物懲罰 (Influence Map)
+                // ==========================================
+                if (useDynamicObstacles && predictedObstacles != null && predictedObstacles.Count > 0)
+                {
+                    float dynamicPenalty = 0f;
+                    foreach (Vector3 predPos in predictedObstacles)
+                    {
+                        float dist = Vector3.Distance(neighborNode.worldPosition, predPos);
+                        if (dist < dynamicPenaltyRadius)
+                        {
+                            // 越靠近預測點，懲罰越高 (線性遞減)
+                            dynamicPenalty += maxDynamicPenalty * (1.0f - (dist / dynamicPenaltyRadius));
+                        }
+                    }
+                    finalCost += dynamicPenalty;
+                }
                 
                 neighbors.Add(new KeyValuePair<GridNode, float>(neighborNode, finalCost));
             }
@@ -121,14 +143,16 @@ public class UniversalPathfinder : MonoBehaviour
     // ==========================================
     // 專門給 GridMap3D 用的尋路演算法
     // ==========================================
-    public List<Vector3> FindPath(GridMap3D map, Vector3 startWorldPos, Vector3 goalWorldPos)
+    public List<Vector3> FindPath(GridMap3D map, Vector3 startWorldPos, Vector3 goalWorldPos, List<Vector3> predictedObstacles = null)
     {
         // 找到離起點和終點最近的有效網格節點
         GridNode startNode = map.GetClosestNode(startWorldPos);
         GridNode goalNode = map.GetClosestNode(goalWorldPos);
 
-        if (startNode == null || goalNode == null)
+        if (startNode == null || goalNode == null){
+            Debug.LogWarning($"找不到起點或終點的有效節點！Start: {startWorldPos}, Goal: {goalWorldPos}");
             return new List<Vector3>(); // 找不到起點或終點
+        }
 
         // 初始化資料結構
         var openSet = new SimplePriorityQueue<GridNode>();
@@ -157,7 +181,7 @@ public class UniversalPathfinder : MonoBehaviour
             }
 
             // 展開鄰居
-            foreach (var kvp in GetNeighbors(map, current))
+            foreach (var kvp in GetNeighbors(map, current, predictedObstacles))
             {
                 GridNode neighbor = kvp.Key;
                 float moveCost = kvp.Value;
@@ -185,7 +209,7 @@ public class UniversalPathfinder : MonoBehaviour
     // ==========================================
     // 專門給 WaypointGraph3D 用的尋路演算法
     // ==========================================
-    public List<Vector3> FindPath(WaypointGraph3D graph, Vector3 startWorldPos, Vector3 goalWorldPos)
+    public List<Vector3> FindPath(WaypointGraph3D graph, Vector3 startWorldPos, Vector3 goalWorldPos, List<Vector3> predictedObstacles = null)
     {
         // 1. 直達優化：如果起點到終點完全沒有障礙物，直接走直線！(Waypoint Graph 的強大優勢)
         // if (graph.CheckLineOfSight(startWorldPos, goalWorldPos))
@@ -244,6 +268,24 @@ public class UniversalPathfinder : MonoBehaviour
                 
                 if (heightDiff > maxJumpHeight) continue; // 太高跳不上去，無視這條連線！
                 if (heightDiff < -maxJumpHeight) moveCost += dropPenalty; // 往下掉給予額外成本懲罰
+
+                // ==========================================
+                // ✨ 動態障礙物懲罰 (Influence Map)
+                // ==========================================
+                if (useDynamicObstacles && predictedObstacles != null && predictedObstacles.Count > 0)
+                {
+                    float dynamicPenalty = 0f;
+                    foreach (Vector3 predPos in predictedObstacles)
+                    {
+                        float dist = Vector3.Distance(neighborPos, predPos);
+                        if (dist < dynamicPenaltyRadius)
+                        {
+                            dynamicPenalty += maxDynamicPenalty * (1.0f - (dist / dynamicPenaltyRadius));
+                        }
+                    }
+                    moveCost += dynamicPenalty; // 疊加高昂的成本，讓 A* 嫌棄這條連線
+                }
+
 
                 float tentativeG = gScore[current] + moveCost;
 

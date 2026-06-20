@@ -32,6 +32,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public string unwalkableLayerName = "Unwalkable";
     public string waypointLayerName = "Default";
 
+    [Header("Area Layers")]
+    public string casualAreaLayerName = "CasualArea";
+    public string restrictedAreaLayerName = "RestrictedArea";
+    public float areaLayerMarkerHeight = 0.08f;
+
     [Header("Navigation Rebuild")]
 
     //WaypointGraph 設定
@@ -86,6 +91,12 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         return ResolveLayer(layerName);
     }
 
+    int GetAreaLayerSafe(LayoutZone layoutZone)
+    {
+        string areaLayerName = layoutZone == LayoutZone.Restricted ? restrictedAreaLayerName : casualAreaLayerName;
+        return ResolveLayer(areaLayerName, walkableLayerName);
+    }
+
     [Header("Generation Mode")]
     public bool generateOnPlay = false;
 
@@ -108,21 +119,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public bool generateConnectionSideWalls = true;
     public float connectionSideWallOverlap = 0.35f;
 
-    [Header("Obstacle Density")]
-    [Tooltip("Public room obstacle density multiplier")]
-    public float publicObstacleDensity = 0.35f;
-
-    [Tooltip("SemiRestricted room obstacle density multiplier")]
-    public float semiRestrictedObstacleDensity = 0.65f;
-
-    [Tooltip("Restricted room obstacle density multiplier")]
-    public float restrictedObstacleDensity = 1.0f;
-
-    [Tooltip("Critical room obstacle density multiplier")]
-    public float criticalObstacleDensity = 1.2f;
-
-    public int maxObstaclesPerRoom = 8;
-
     [Header("Geometry")]
     public float wallHeight = 3.0f;
     public float wallThickness = 0.25f;
@@ -133,14 +129,12 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     [Header("Visual Debug")]
     public bool showRoomLabels = true;
     public bool showWaypointGizmos = true;
-    public bool generateCoverObjects = false;
 
     [Header("Materials")]
     public Material floorMat;
     public Material wallMat;
     public Material restrictedFloorMat;
     public Color restrictedFloorColor = new Color(1.0f, 0.93333334f, 0.54901963f);
-    public Material coverMat;
 
     [Header("Layout Scale")]
     public float layoutScale = 2.0f;          // 房間與地圖整體放大 2 倍
@@ -272,7 +266,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     {
         Garden,
         Courtyard,
-        Resort
+        Resort,
+        LinearFinalLevel
     }
 
     class Room
@@ -409,7 +404,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         // 視覺用大地板，可選，但不要讓 pathfinding 使用它
         CreateOnePieceFloor();
 
-        // 真正的 rooms / walls / obstacles
+        // 真正的 rooms / walls
         BuildGeometry();
 
         // corridor walls
@@ -645,12 +640,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         }
         restrictedFloorMat.color = restrictedFloorColor;
 
-        if (coverMat == null)
-        {
-            coverMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            coverMat.color = new Color(0.35f, 0.22f, 0.12f);
-        }
-
         if (exitMat == null)
         {
             exitMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
@@ -784,6 +773,12 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     void GenerateVillaLayout()
     {
+        if (finalVillaStyle == FinalVillaStyle.LinearFinalLevel)
+        {
+            GenerateLinearFinalVillaLayout();
+            return;
+        }
+
         int targetRooms = Mathf.Clamp(Mathf.RoundToInt(18.0f + finalVillaComplexity * 0.22f), 18, 40);
         int gridCols = 44;
         int gridRows = 34;
@@ -861,6 +856,219 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         primaryGoalRoomName = targetGridRoom != null ? targetGridRoom.room.name : gridRooms[gridRooms.Count - 1].room.name;
         secondaryGoalRoomName = safeGridRoom != null ? safeGridRoom.room.name : null;
         finalTargetRoom = targetGridRoom != null ? targetGridRoom.room : gridRooms[gridRooms.Count - 1].room;
+    }
+
+    void GenerateLinearFinalVillaLayout()
+    {
+        int targetRooms = Mathf.Clamp(Mathf.RoundToInt(18.0f + finalVillaComplexity * 0.22f), 18, 40);
+        float complexity01 = Mathf.InverseLerp(40.0f, 100.0f, finalVillaComplexity);
+        int spineRoomCount = Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(11.0f, 16.0f, complexity01)), 8, targetRooms);
+
+        List<Room> spineRooms = new List<Room>();
+        List<Vector2> spineCenters = new List<Vector2>();
+        List<Vector2> spineSizes = new List<Vector2>();
+
+        Vector2 spawnSize = GetSeededRoomSize(8.0f, 5.0f, 0.12f);
+        Vector2 spawnCenter = new Vector2(0.0f, -18.0f);
+        Room spawnRoom = AddRoom("Courtyard / Entrance", spawnCenter, spawnSize, SecurityLevel.Public);
+        spineRooms.Add(spawnRoom);
+        spineCenters.Add(spawnCenter);
+        spineSizes.Add(spawnSize);
+
+        Vector2 previousSize = spawnSize;
+        float currentY = spawnCenter.y;
+
+        for (int i = 1; i < spineRoomCount - 1; i++)
+        {
+            Vector2 size = GetLinearFinalSpineRoomSize(i, spineRoomCount, complexity01);
+            currentY = GetAdjacentCenter(currentY, previousSize.y, size.y, 1.0f);
+
+            SecurityLevel security = GetLinearFinalSpineSecurity(i, spineRoomCount);
+            Room room = AddRoom(GetLinearFinalSpineRoomName(i), new Vector2(0.0f, currentY), size, security);
+            spineRooms.Add(room);
+            spineCenters.Add(new Vector2(0.0f, currentY));
+            spineSizes.Add(size);
+
+            ConnectRooms(spineRooms[spineRooms.Count - 2], room, Side.North, Side.South);
+            previousSize = size;
+        }
+
+        Vector2 targetSize = GetSeededRoomSize(8.5f, 5.5f, 0.10f);
+        currentY = GetAdjacentCenter(currentY, previousSize.y, targetSize.y, 1.0f);
+        Room targetRoom = AddRoom("Target Room", new Vector2(0.0f, currentY), targetSize, SecurityLevel.Critical);
+        spineRooms.Add(targetRoom);
+        spineCenters.Add(new Vector2(0.0f, currentY));
+        spineSizes.Add(targetSize);
+        ConnectRooms(spineRooms[spineRooms.Count - 2], targetRoom, Side.North, Side.South);
+
+        int sideRoomBudget = Mathf.Max(0, targetRooms - spineRooms.Count);
+        bool[,] sideUsed = new bool[spineRooms.Count, 2];
+        List<Room> primarySideRooms = new List<Room>();
+        List<Vector2> primarySideCenters = new List<Vector2>();
+        List<Vector2> primarySideSizes = new List<Vector2>();
+        List<Side> primarySideDirections = new List<Side>();
+
+        int sideAttempt = 0;
+        int firstBranchableSpine = 1;
+        int lastBranchableSpine = spineRooms.Count - 2;
+        while (sideRoomBudget > 0 && firstBranchableSpine <= lastBranchableSpine && sideAttempt < spineRooms.Count * 4)
+        {
+            int spineIndex = firstBranchableSpine + (sideAttempt % (lastBranchableSpine - firstBranchableSpine + 1));
+            bool placeOnEast = ((sideAttempt / Mathf.Max(1, lastBranchableSpine - firstBranchableSpine + 1)) + spineIndex) % 2 == 0;
+            int sideIndex = placeOnEast ? 1 : 0;
+
+            if (!sideUsed[spineIndex, sideIndex])
+            {
+                Room anchor = spineRooms[spineIndex];
+                Vector2 anchorCenter = spineCenters[spineIndex];
+                Vector2 anchorSize = spineSizes[spineIndex];
+                Vector2 sideSize = GetLinearFinalSideRoomSize(anchorSize, complexity01);
+                float maxYOffset = Mathf.Max(0.0f, (anchorSize.y - sideSize.y) * 0.35f);
+                float yOffset = maxYOffset > 0.0f ? Random.Range(-maxYOffset, maxYOffset) : 0.0f;
+                float direction = placeOnEast ? 1.0f : -1.0f;
+                float sideX = GetAdjacentCenter(anchorCenter.x, anchorSize.x, sideSize.x, direction);
+                Vector2 sideCenter = new Vector2(sideX, anchorCenter.y + yOffset);
+
+                Room sideRoom = AddRoom(GetLinearFinalSideRoomName(primarySideRooms.Count + 1), sideCenter, sideSize, GetLinearFinalSideRoomSecurity(spineIndex, spineRooms.Count));
+                ConnectRooms(anchor, sideRoom, placeOnEast ? Side.East : Side.West, placeOnEast ? Side.West : Side.East);
+
+                sideUsed[spineIndex, sideIndex] = true;
+                primarySideRooms.Add(sideRoom);
+                primarySideCenters.Add(sideCenter);
+                primarySideSizes.Add(sideSize);
+                primarySideDirections.Add(placeOnEast ? Side.East : Side.West);
+                sideRoomBudget--;
+            }
+
+            sideAttempt++;
+        }
+
+        int secondaryIndex = 0;
+        while (sideRoomBudget > 0 && secondaryIndex < primarySideRooms.Count)
+        {
+            Room anchor = primarySideRooms[secondaryIndex];
+            Vector2 anchorCenter = primarySideCenters[secondaryIndex];
+            Vector2 anchorSize = primarySideSizes[secondaryIndex];
+            Side directionSide = primarySideDirections[secondaryIndex];
+            float direction = directionSide == Side.East ? 1.0f : -1.0f;
+            Vector2 branchSize = GetLinearFinalSecondaryRoomSize(anchorSize, complexity01);
+            float branchX = GetAdjacentCenter(anchorCenter.x, anchorSize.x, branchSize.x, direction);
+            Vector2 branchCenter = new Vector2(branchX, anchorCenter.y);
+
+            Room branchRoom = AddRoom(GetLinearFinalSecondaryRoomName(secondaryIndex + 1), branchCenter, branchSize, SecurityLevel.Restricted);
+            ConnectRooms(anchor, branchRoom, directionSide, directionSide == Side.East ? Side.West : Side.East);
+
+            sideRoomBudget--;
+            secondaryIndex++;
+        }
+
+        playerSpawnRoomName = spawnRoom.name;
+        primaryGoalRoomName = targetRoom.name;
+        secondaryGoalRoomName = null;
+        finalTargetRoom = targetRoom;
+    }
+
+    Vector2 GetLinearFinalSpineRoomSize(int index, int spineRoomCount, float complexity01)
+    {
+        float width = Random.Range(7.0f, 10.5f + complexity01 * 1.5f);
+        float height = Random.Range(4.8f, 6.8f);
+
+        if (index > 1 && index < spineRoomCount - 2 && Random.value < 0.28f + complexity01 * 0.12f)
+            width += Random.Range(1.5f, 3.0f);
+
+        return new Vector2(
+            Mathf.Round(width * 2.0f) * 0.5f,
+            Mathf.Round(height * 2.0f) * 0.5f
+        );
+    }
+
+    Vector2 GetLinearFinalSideRoomSize(Vector2 anchorSize, float complexity01)
+    {
+        float width = Random.Range(4.0f, 6.5f + complexity01);
+        float height = Random.Range(4.0f, Mathf.Max(4.25f, anchorSize.y - 0.4f));
+        return new Vector2(
+            Mathf.Round(width * 2.0f) * 0.5f,
+            Mathf.Round(height * 2.0f) * 0.5f
+        );
+    }
+
+    Vector2 GetLinearFinalSecondaryRoomSize(Vector2 anchorSize, float complexity01)
+    {
+        float width = Random.Range(3.5f, 5.5f + complexity01 * 0.5f);
+        float height = Mathf.Clamp(anchorSize.y * Random.Range(0.75f, 0.95f), 3.5f, anchorSize.y);
+        return new Vector2(
+            Mathf.Round(width * 2.0f) * 0.5f,
+            Mathf.Round(height * 2.0f) * 0.5f
+        );
+    }
+
+    SecurityLevel GetLinearFinalSpineSecurity(int index, int spineRoomCount)
+    {
+        if (index <= 1)
+            return Random.value < 0.45f ? SecurityLevel.Public : SecurityLevel.Restricted;
+
+        return SecurityLevel.Restricted;
+    }
+
+    SecurityLevel GetLinearFinalSideRoomSecurity(int spineIndex, int spineRoomCount)
+    {
+        if (spineIndex <= 2 && Random.value < 0.25f)
+            return SecurityLevel.Public;
+
+        return SecurityLevel.Restricted;
+    }
+
+    string GetLinearFinalSpineRoomName(int index)
+    {
+        string[] names =
+        {
+            "Reception Gallery",
+            "Grand Hall",
+            "Security Checkpoint",
+            "Private Gallery",
+            "Service Crossing",
+            "Inner Salon",
+            "Vault Approach",
+            "Executive Hall",
+            "Observation Hall",
+            "Final Antechamber"
+        };
+
+        return "L3 " + names[(index - 1) % names.Length] + " " + index.ToString("00");
+    }
+
+    string GetLinearFinalSideRoomName(int index)
+    {
+        string[] names =
+        {
+            "Records Room",
+            "Guard Lounge",
+            "Workshop",
+            "Storage",
+            "Library",
+            "Private Study",
+            "Security Office",
+            "Guest Suite",
+            "Wine Room",
+            "Server Room"
+        };
+
+        return "L3 " + names[(index - 1) % names.Length] + " " + index.ToString("00");
+    }
+
+    string GetLinearFinalSecondaryRoomName(int index)
+    {
+        string[] names =
+        {
+            "Archive",
+            "Utility Annex",
+            "Equipment Room",
+            "Staff Alcove",
+            "Locked Study",
+            "Side Vault"
+        };
+
+        return "L3 " + names[(index - 1) % names.Length] + " Annex " + index.ToString("00");
     }
 
     Side GetRandomSide()
@@ -1296,9 +1504,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
             CreateWalls(r);
 
-            if (currentLevel < finalPcgLevel && generateCoverObjects && ShouldGenerateCoverInRoom(r))
-                CreateRoomCover(r);
-
             if (showRoomLabels)
                 CreateRoomLabel(r);
         }
@@ -1316,6 +1521,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         Renderer renderer = floor.GetComponent<Renderer>();
         renderer.material = IsRestricted(r) ? restrictedFloorMat : floorMat;
+
+        CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(r.layoutZone) + "_" + r.name, floor.transform.position, floor.transform.localScale, r.layoutZone, transform);
     }
 
     bool IsRestricted(Room r)
@@ -1323,18 +1530,31 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         return r.security == SecurityLevel.Restricted || r.security == SecurityLevel.Critical;
     }
 
-    bool ShouldGenerateCoverInRoom(Room r)
+    LayoutZone GetConnectionLayoutZone(Room a, Room b)
     {
-        if (currentLevel >= finalPcgLevel)
-            return false;
+        if ((a != null && a.layoutZone == LayoutZone.Restricted) || (b != null && b.layoutZone == LayoutZone.Restricted))
+            return LayoutZone.Restricted;
 
-        if (r == levelExitRoom)
-            return false;
+        return LayoutZone.Casual;
+    }
 
-        if (r.name == playerSpawnRoomName)
-            return false;
+    string GetLayoutZoneNameToken(LayoutZone layoutZone)
+    {
+        return layoutZone == LayoutZone.Restricted ? "Restricted" : "Casual";
+    }
 
-        return true;
+    void CreateLayoutZoneMarker(string markerName, Vector3 floorCenter, Vector3 floorSize, LayoutZone layoutZone, Transform parent)
+    {
+        GameObject marker = new GameObject(markerName);
+        marker.layer = GetAreaLayerSafe(layoutZone);
+        marker.transform.parent = parent;
+
+        float markerHeight = Mathf.Max(0.01f, areaLayerMarkerHeight);
+        marker.transform.position = new Vector3(floorCenter.x, markerHeight * 0.5f, floorCenter.z);
+
+        BoxCollider collider = marker.AddComponent<BoxCollider>();
+        collider.isTrigger = true;
+        collider.size = new Vector3(Mathf.Abs(floorSize.x), markerHeight, Mathf.Abs(floorSize.z));
     }
 
     void CreateWalls(Room r)
@@ -1536,60 +1756,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         renderer.material = wallMat;
     }
 
-    void CreateRoomCover(Room r)
-    {
-        float roomArea = r.size.x * r.size.y;
-        float density = GetObstacleDensityBySecurity(r.security);
-
-        // 根據房間面積與安全等級決定 obstacle 數量
-        // 面積越大，障礙物越多；安全等級越高，密度越高
-        int count = Mathf.RoundToInt((roomArea / 80.0f) * density);
-
-        count = Mathf.Clamp(count, 0, maxObstaclesPerRoom);
-
-        // Public 區域至少不強制生成很多，避免入口/大廳太堵
-        if (r.security == SecurityLevel.Public)
-        {
-            count = Mathf.Clamp(count, 0, 2);
-        }
-
-        // Restricted / Critical 區域至少有一定遮蔽物
-        if (r.security == SecurityLevel.Restricted)
-        {
-            count = Mathf.Max(count, 3);
-        }
-        else if (r.security == SecurityLevel.Critical)
-        {
-            count = Mathf.Max(count, 4);
-        }
-
-        for (int i = 0; i < count; i++)
-        {
-            CreateSingleObstacleInRoom(r, i);
-        }
-    }
-
-    float GetObstacleDensityBySecurity(SecurityLevel security)
-    {
-        switch (security)
-        {
-            case SecurityLevel.Public:
-                return publicObstacleDensity;
-
-            case SecurityLevel.SemiRestricted:
-                return semiRestrictedObstacleDensity;
-
-            case SecurityLevel.Restricted:
-                return restrictedObstacleDensity;
-
-            case SecurityLevel.Critical:
-                return criticalObstacleDensity;
-
-            default:
-                return 0.5f;
-        }
-    }
-
     void CreateRoomLabel(Room r)
     {
         GameObject labelObj = new GameObject("Label_" + r.name);
@@ -1700,6 +1866,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         int patrolBudget = GetPatrolEnemyBudget();
         int generatedPatrolCount = 0;
+        HashSet<Room> loopPatrolRooms = new HashSet<Room>();
         for (int i = 0; i < patrolRooms.Count && generatedPatrolCount < patrolBudget; i++)
         {
             Room room = patrolRooms[i];
@@ -1713,6 +1880,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
                 GameObject enemy = CreateEnemyInstance(prefab, "patrolEnemyTest_PCG_" + (generatedPatrolCount + 1).ToString("00"), spawnPosition, spawnRotation, enemyRoot.transform);
                 ConfigureEnemyAgent(enemy, route.routeName, AgentDecision.PATROL);
                 RecordEnemyPlacement(placements, enemy.name, route.routeName, room, spawnPosition, GetRoomPlacementReason(room, true));
+                loopPatrolRooms.Add(room);
                 generatedPatrolCount++;
             }
         }
@@ -1743,7 +1911,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             }
         }
 
-        List<StandingGuardCandidate> standCandidates = BuildStandingGuardCandidates();
+        List<StandingGuardCandidate> standCandidates = BuildStandingGuardCandidates(loopPatrolRooms);
         int standCount = Mathf.Min(GetStandEnemyBudget(), standCandidates.Count);
         for (int i = 0; i < standCount; i++)
         {
@@ -2235,14 +2403,28 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         };
     }
 
-    List<StandingGuardCandidate> BuildStandingGuardCandidates()
+    List<StandingGuardCandidate> BuildStandingGuardCandidates(HashSet<Room> loopPatrolRooms)
     {
         List<StandingGuardCandidate> candidates = new List<StandingGuardCandidate>();
+
+        if (loopPatrolRooms != null)
+        {
+            foreach (Room room in loopPatrolRooms)
+            {
+                if (ShouldSkipEnemyRoom(room) || !CanGenerateEnemyInRoom(room))
+                    continue;
+
+                AddStandingCornerCandidatesForPatrolRoom(candidates, room);
+            }
+        }
 
         foreach (Connection connection in connections)
         {
             Room guardRoom = GetMoreSecureRoom(connection.a, connection.b);
             if (ShouldSkipEnemyRoom(guardRoom) || !CanGenerateEnemyInRoom(guardRoom))
+                continue;
+
+            if (loopPatrolRooms != null && loopPatrolRooms.Contains(guardRoom))
                 continue;
 
             Vector3 door = connection.doorWorldPos;
@@ -2269,6 +2451,9 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             if (candidates.Count >= standBudget)
                 break;
 
+            if (loopPatrolRooms != null && loopPatrolRooms.Contains(room))
+                continue;
+
             Vector3 position = new Vector3(room.center.x, 0.05f, room.center.y);
             AddStandingCandidateIfSpaced(candidates, new StandingGuardCandidate
             {
@@ -2281,6 +2466,51 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         candidates.Sort(CompareStandingGuardCandidates);
         return candidates;
+    }
+
+    void AddStandingCornerCandidatesForPatrolRoom(List<StandingGuardCandidate> candidates, Room room)
+    {
+        Vector3[] corners = GetStandingCornerPointsForRoom(room);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            Vector3 position = corners[i];
+            AddStandingCandidateIfSpaced(candidates, new StandingGuardCandidate
+            {
+                room = room,
+                position = position,
+                score = CalculateEnemyRoomScore(room, false) + 20f - i,
+                reason = GetPatrolRoomCornerStandingReason(room, i, position)
+            });
+        }
+    }
+
+    Vector3[] GetStandingCornerPointsForRoom(Room room)
+    {
+        float marginX = Mathf.Min(enemyRoomInset, room.size.x * 0.35f);
+        float marginZ = Mathf.Min(enemyRoomInset, room.size.y * 0.35f);
+        float left = room.Left + marginX;
+        float right = room.Right - marginX;
+        float bottom = room.Bottom + marginZ;
+        float top = room.Top - marginZ;
+
+        if (right <= left)
+            left = right = room.center.x;
+
+        if (top <= bottom)
+            bottom = top = room.center.y;
+
+        return new[]
+        {
+            new Vector3(left, 0.05f, bottom),
+            new Vector3(right, 0.05f, bottom),
+            new Vector3(right, 0.05f, top),
+            new Vector3(left, 0.05f, top)
+        };
+    }
+
+    string GetPatrolRoomCornerStandingReason(Room room, int cornerIndex, Vector3 position)
+    {
+        return $"PatrolRoomCornerStand: room={room.name}, corner={cornerIndex + 1}, zone={GetLayoutZoneLabel(room.layoutZone)}, security={room.security}, score={CalculateEnemyRoomScore(room, false) + 20f - cornerIndex:0.0}";
     }
 
     int CompareStandingGuardCandidates(StandingGuardCandidate a, StandingGuardCandidate b)
@@ -2416,10 +2646,17 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         AgentBrain brain = enemy.GetComponent<AgentBrain>();
         if (brain != null)
         {
-            brain.defaultRouteName = routeName;
+            if (brain.actionController == null)
+                brain.actionController = enemy.GetComponent<AgentActionController>();
+
+            if (brain.actionController != null)
+            {
+                brain.actionController.defaultRouteName = routeName;
+                brain.actionController.startIndex = 0;
+            }
+
             brain.defaultDecision = decision;
             brain.currentDecision = decision;
-            brain.startIndex = 0;
         }
 
         AgentNavigator navigator = enemy.GetComponent<AgentNavigator>();
@@ -2427,7 +2664,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         {
             navigator.gridMap = gridMap;
             navigator.waypointGraph = waypointGraph;
-            navigator.useGridMap = gridMap != null;
+            navigator.useGridMap = false;
             navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
         }
     }
@@ -2808,6 +3045,9 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
                 Renderer renderer = floor.GetComponent<Renderer>();
                 renderer.material = floorMat;
+
+                LayoutZone connectorZone = GetConnectionLayoutZone(a, b);
+                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, connectorZone, root.transform);
             }
             else
             {
@@ -2844,6 +3084,9 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
                 Renderer renderer = floor.GetComponent<Renderer>();
                 renderer.material = floorMat;
+
+                LayoutZone connectorZone = GetConnectionLayoutZone(a, b);
+                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, connectorZone, root.transform);
             }
         }
     }
@@ -3046,54 +3289,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         Renderer renderer = wall.GetComponent<Renderer>();
         renderer.material = wallMat;
-    }
-
-    void CreateSingleObstacleInRoom(Room r, int index)
-    {
-        float margin = 1.8f;
-
-        if (r.size.x < margin * 2.0f || r.size.y < margin * 2.0f)
-            return;
-
-        float x = Random.Range(r.Left + margin, r.Right - margin);
-        float z = Random.Range(r.Bottom + margin, r.Top - margin);
-
-        GameObject obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        obstacle.name = "Obstacle_" + r.name + "_" + index;
-
-        obstacle.layer = GetUnwalkableLayerSafe();
-
-        obstacle.transform.parent = transform;
-
-        float width;
-        float depth;
-
-        // Public 區域障礙物小一點，不阻塞玩家
-        if (r.security == SecurityLevel.Public)
-        {
-            width = Random.Range(1.0f, 1.8f);
-            depth = Random.Range(1.0f, 1.8f);
-        }
-        // SemiRestricted 中等
-        else if (r.security == SecurityLevel.SemiRestricted)
-        {
-            width = Random.Range(1.2f, 2.4f);
-            depth = Random.Range(1.2f, 2.4f);
-        }
-        // Restricted / Critical 可以更大，更像掩體或大型家具
-        else
-        {
-            width = Random.Range(1.5f, 3.0f);
-            depth = Random.Range(1.5f, 3.0f);
-        }
-
-        float height = wallHeight;
-
-        obstacle.transform.localScale = new Vector3(width, height, depth);
-        obstacle.transform.position = new Vector3(x, height * 0.5f, z);
-
-        Renderer renderer = obstacle.GetComponent<Renderer>();
-        renderer.material = coverMat;
     }
 
     void CreateConnectionSideWalls()
@@ -3502,17 +3697,27 @@ public class VillaPCG_v4Editor : Editor
                 passed = false;
             }
 
-            if (string.IsNullOrWhiteSpace(brain.defaultRouteName))
+            if (brain.actionController == null)
+                brain.actionController = enemy.GetComponent<AgentActionController>();
+
+            if (brain.actionController == null)
+            {
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} is missing AgentActionController.");
+                passed = false;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(brain.actionController.defaultRouteName))
             {
                 Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} has an empty defaultRouteName.");
                 passed = false;
                 continue;
             }
 
-            RouteDefinition route = routeManager.GetRoute(brain.defaultRouteName);
+            RouteDefinition route = routeManager.GetRoute(brain.actionController.defaultRouteName);
             if (route == null)
             {
-                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route '{brain.defaultRouteName}' was not found in RouteManager.");
+                Debug.LogError($"[VillaPCG_v4 Validation] {enemy.name} route '{brain.actionController.defaultRouteName}' was not found in RouteManager.");
                 passed = false;
                 continue;
             }
@@ -3788,12 +3993,20 @@ public static class VillaPCG_v4ValidationRunner
                 continue;
 
             AppendCheck(builder, brain.defaultDecision == expectedDecision && brain.currentDecision == expectedDecision, $"{enemy.name} decision is {expectedDecision}", ref passed);
-            AppendCheck(builder, !string.IsNullOrWhiteSpace(brain.defaultRouteName), $"{enemy.name} has defaultRouteName", ref passed);
 
-            if (!string.IsNullOrWhiteSpace(brain.defaultRouteName))
+            if (brain.actionController == null)
+                brain.actionController = enemy.GetComponent<AgentActionController>();
+
+            AppendCheck(builder, brain.actionController != null, $"{enemy.name} has AgentActionController", ref passed);
+            if (brain.actionController == null)
+                continue;
+
+            AppendCheck(builder, !string.IsNullOrWhiteSpace(brain.actionController.defaultRouteName), $"{enemy.name} has defaultRouteName", ref passed);
+
+            if (!string.IsNullOrWhiteSpace(brain.actionController.defaultRouteName))
             {
-                RouteDefinition route = routeManager.GetRoute(brain.defaultRouteName);
-                AppendCheck(builder, route != null, $"{enemy.name} route exists: {brain.defaultRouteName}", ref passed);
+                RouteDefinition route = routeManager.GetRoute(brain.actionController.defaultRouteName);
+                AppendCheck(builder, route != null, $"{enemy.name} route exists: {brain.actionController.defaultRouteName}", ref passed);
 
                 if (route != null)
                 {

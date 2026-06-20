@@ -1,8 +1,24 @@
+
 using UnityEngine;
 
 public enum FollowPathMode { Strict, LookAhead, LookAheadPredictive }
 public static class Behaviors
 {
+    // ✨ [新增] 戰術側步 (Strafe) 的 Steering Behavior
+    public static Vector3 Strafe(Vector3 currentVelocity, Vector3 strafeDir, float maxSpeed)
+    {
+        // 確保有傳入方向向量
+        if (strafeDir.sqrMagnitude > 0.01f)
+        {
+            // 將期望的側向向量與最大速度結合
+            Vector3 desired = strafeDir.normalized * maxSpeed;
+            // Debug.Log($"Strafe desired: {desired}, currentVelocity: {currentVelocity}");
+            
+            // 轉向力 = 期望速度 - 當前速度
+            return desired - currentVelocity;
+        }
+        return Vector3.zero;
+    }
     public static Vector3 Seek(Vector3 currentPos, Vector3 targetPos, Vector3 currentVelocity, float maxSpeed)
     {
         // 【修正】只取水平方向的目標
@@ -96,7 +112,7 @@ public static class Behaviors
     }
 
     //射線避障 (Raycast Avoidance) - 使用 Unity 物理系統
-    public static Vector3 RaycastAvoidance(Transform agentTransform, Vector3 currentVelocity, float maxSpeed, LayerMask obstacleLayers, float baseLookAhead = 1f, float adaptiveLength = 1f, bool drawDebug = true)
+    public static Vector3 RaycastAvoidance(Transform agentTransform, Vector3 currentVelocity, float maxSpeed, LayerMask obstacleLayers, float baseLookAhead = 1f, float adaptiveLength = 1f)
     {
         float speedRatio = currentVelocity.magnitude / (maxSpeed + 0.1f);
         float dynamicLength = baseLookAhead + adaptiveLength * speedRatio;
@@ -131,13 +147,12 @@ public static class Behaviors
                 float weight = 1.0f - ratio;
                 combinedNormal += hit.normal * weight;
                 
-                if (drawDebug)
-                    Debug.DrawLine(rayOrigin, hit.point, Color.red);
+                // Debug 視覺化射線
+                Debug.DrawLine(rayOrigin, hit.point, Color.red);
             }
             else
             {
-                if (drawDebug)
-                    Debug.DrawRay(rayOrigin, dir * dynamicLength, Color.green);
+                Debug.DrawRay(rayOrigin, dir * dynamicLength, Color.green);
             }
         }
 
@@ -188,8 +203,9 @@ public static class Behaviors
             // 避免除以零，並且只處理半徑內的目標 (雖然 OverlapSphere 已經篩選過半徑，但安全第一)
             if (dist > 0.01f && dist < avoidanceRadius)
             {
+                // UnityEngine.Debug.Log($"DynamicAvoidance: Avoiding {neighbor.name}, distance: {dist}");
                 // 距離越近，反向推力越強
-                steeringForce += diff.normalized / dist;
+                steeringForce += (diff.normalized / dist) * 5.0f; // 5.0f 是調整強度的係數
                 count++;
             }
         }
@@ -303,9 +319,13 @@ public static class Behaviors
         }
         else
         {   
-            if (agent.HasState(AgentState.ARRIVE))
+            if (agent.HasState(AgentState.PURSUE))
             {
                 return Pursue(currentPos, targetNode, Vector3.zero, currentVelocity, maxSpeed);
+            }
+            else if (agent.HasState(AgentState.SEEK))
+            {
+                return Seek(currentPos, targetNode, currentVelocity, maxSpeed);
             }
             else
             {   
@@ -324,11 +344,6 @@ public static class Behaviors
         LayerMask obstacleLayers, 
         float rayHeightOffset = 1.0f)
     {
-        if (path == null || path.Length == 0)
-            return FollowPathMode.Strict;
-
-        currentIndex = Mathf.Clamp(currentIndex, 0, path.Length - 1);
-
         // 1. 如果已經是最後一個點，乖乖嚴格走到終點
         if (currentIndex >= path.Length - 1) return FollowPathMode.Strict;
 

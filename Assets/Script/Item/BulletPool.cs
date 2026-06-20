@@ -12,12 +12,6 @@ public class BulletPool : MonoBehaviour
     public GameObject explosionPrefab;
     public int initialPoolSize = 20; // 一開始準備幾顆子彈
 
-    [Header("Debug")]
-    public bool showDebugLogs = false;
-    private bool hasLoggedMissingBulletPrefab;
-    private bool hasLoggedMissingCoinPrefab;
-    private bool hasLoggedMissingExplosionPrefab;
-
     // 存放子彈的佇列 (Queue 適合先進先出)
     private Queue<GameObject> bulletPool = new Queue<GameObject>();
     private Queue<GameObject> coinPool = new Queue<GameObject>();
@@ -26,15 +20,8 @@ public class BulletPool : MonoBehaviour
     void Awake()
     {
         // 設定 Singleton
-        if (Instance == null)
-        {
-            Instance = this;
-        }
-        else
-        {
-            Destroy(gameObject);
-            return;
-        }
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
 
         // 初始化物件池
         for (int i = 0; i < initialPoolSize; i++)
@@ -45,20 +32,8 @@ public class BulletPool : MonoBehaviour
         }
     }
 
-    void OnDestroy()
-    {
-        if (Instance == this)
-            Instance = null;
-    }
-
     private GameObject CreateNewBullet()
     {
-        if (bulletPrefab == null)
-        {
-            LogMissingPrefabOnce(ref hasLoggedMissingBulletPrefab, "bulletPrefab");
-            return null;
-        }
-
         // 生成子彈，並把 BulletPoolManager 當作它的父物件 (保持 Hierarchy 乾淨)
         GameObject obj = Instantiate(bulletPrefab, transform);
         obj.SetActive(false); // 先隱藏
@@ -67,25 +42,13 @@ public class BulletPool : MonoBehaviour
     }
     private GameObject CreateNewCoin()
     {
-        if (coinPrefab == null)
-        {
-            LogMissingPrefabOnce(ref hasLoggedMissingCoinPrefab, "coinPrefab");
-            return null;
-        }
-
         GameObject obj = Instantiate(coinPrefab, transform);
         obj.SetActive(false);
         coinPool.Enqueue(obj);
         return obj;
     }
     private GameObject CreateNewExplosion()
-    {
-        if (explosionPrefab == null)
-        {
-            LogMissingPrefabOnce(ref hasLoggedMissingExplosionPrefab, "explosionPrefab");
-            return null;
-        }
-
+    {        
         GameObject obj = Instantiate(explosionPrefab, transform);
         obj.SetActive(false);
         explosionPool.Enqueue(obj);
@@ -106,19 +69,15 @@ public class BulletPool : MonoBehaviour
         else
         {
             bullet = CreateNewBullet();
-            if (bullet != null)
-                bulletPool.Dequeue(); // 因為 CreateNewBullet 會把它加進 Queue，所以要立刻拿出來
+            bulletPool.Dequeue(); // 因為 CreateNewBullet 會把它加進 Queue，所以要立刻拿出來
         }
-
-        if (bullet == null)
-            return null;
 
         // 設定位置與旋轉，並啟動它
         bullet.transform.position = position;
         bullet.transform.rotation = rotation;
         bullet.SetActive(true);
 
-        LogDebug($"BulletPool: provided bullet. Remaining bullets = {bulletPool.Count}");
+        UnityEngine.Debug.Log($"BulletPool: 提供了一顆子彈，目前池子裡還有 {bulletPool.Count} 顆");
 
         return bullet;
     }
@@ -133,18 +92,14 @@ public class BulletPool : MonoBehaviour
         else
         {
             coin = CreateNewCoin();
-            if (coin != null)
-                coinPool.Dequeue();
+            coinPool.Dequeue();
         }
-
-        if (coin == null)
-            return null;
 
         coin.transform.position = position;
         coin.transform.rotation = rotation;
         coin.SetActive(true);
 
-        LogDebug($"CoinPool: provided coin. Remaining coins = {coinPool.Count}");
+        UnityEngine.Debug.Log($"CoinPool: 提供了一顆金幣，目前池子裡還有 {coinPool.Count} 顆");
         return coin;
     }
     public GameObject GetExplosion(Vector3 position, Quaternion rotation)
@@ -158,18 +113,14 @@ public class BulletPool : MonoBehaviour
         else
         {
             explosion = CreateNewExplosion();
-            if (explosion != null)
-                explosionPool.Dequeue();
+            explosionPool.Dequeue();
         }
-
-        if (explosion == null)
-            return null;
 
         explosion.transform.position = position;
         explosion.transform.rotation = rotation;
         explosion.SetActive(true);
 
-        LogDebug($"ExplosionPool: provided explosion. Remaining explosions = {explosionPool.Count}");
+        UnityEngine.Debug.Log($"ExplosionPool: 提供了一個爆炸特效，目前池子裡還有 {explosionPool.Count} 個");
         return explosion;
     }
 
@@ -190,22 +141,5 @@ public class BulletPool : MonoBehaviour
     {
         explosion.SetActive(false);
         explosionPool.Enqueue(explosion);
-    }
-
-    private void LogDebug(string message)
-    {
-        if (!showDebugLogs)
-            return;
-
-        Debug.Log($"[BulletPool] {message}");
-    }
-
-    private void LogMissingPrefabOnce(ref bool hasLogged, string fieldName)
-    {
-        if (hasLogged)
-            return;
-
-        hasLogged = true;
-        Debug.LogWarning($"[BulletPool] Missing {fieldName}; cannot create pooled object.");
     }
 }

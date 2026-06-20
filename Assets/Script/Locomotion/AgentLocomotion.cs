@@ -66,24 +66,33 @@ public class AgentLocomotion : MonoBehaviour
     /// </summary>
     private void ApplyMovementAndRotation(float dt)
     {
-        // 1. 物理積分：速度 = 速度 + 加速度(力) * 時間
-        // 1.1. 攔截移動：如果大腦要求原地轉向，就強制煞車並清空推力
-        if (_agent.isTurningInPlace)
+        // ===============================================
+        // 1. 物理推力整合 (Steering Force to Velocity)
+        // ===============================================
+
+        if (_agent.health <= 0)
         {
-            // 【核心修正】：如果是因為要攻擊而停下，直接將物理速度歸零，拒絕任何慣性滑步！
-            if (_agent.brain.currentDecision == AgentDecision.ATTACK)
-            {
-                velocity = Vector3.zero;
-            }
-            else 
-            {
-                velocity = Vector3.Lerp(velocity, Vector3.zero, dt * 10f);
-            }
-            _agent.steeringForce = Vector3.zero;
+            // 如果死亡了，強制煞車，不接受任何導航或側步力
+            velocity = Vector3.Lerp(velocity, Vector3.zero, dt * 5f); // 快速減速到停止
+            _agent.steeringForce = Vector3.zero; // 不再接受新的推力
+        }
+
+        // ✨ [核心修復]: 將「旋轉鎖定」與「位移鎖定」徹底解耦
+        if (_agent.brain.currentDecision == AgentDecision.ATTACK && !_agent.isStrafing && _agent.isTurningInPlace)
+        {
+            // 如果是在攻擊階段的瞄準，且沒有在側步 -> 強制煞車站穩開槍
+            velocity = Vector3.zero; 
+        }
+        else if (_agent.isTurningInPlace && !_agent.isStrafing)
+        {
+            // 一般的原地轉向 (例如尋找聲音來源) -> 給予摩擦力平滑煞車
+            velocity = Vector3.Lerp(velocity, Vector3.zero, dt * 10f); 
         }
         else
         {
-            velocity += _agent.steeringForce * dt;
+            // 只要不是上述被強制卡死的狀況，就接受 Navigator 算出來的 Steering Force！
+            // 這包含了普通的 Seek, PathFollowing，以及我們的 Tactical Strafing 側步力！
+            velocity += _agent.steeringForce * dt; 
         }
 
         // 2. 限制水平最大速度 (由 Agent 的狀態決定 maxSpeed)
@@ -117,46 +126,9 @@ public class AgentLocomotion : MonoBehaviour
             transform.rotation = Quaternion.Euler(0.0f, rotation, 0.0f);
         }
 
-        // 5. 更新動畫
-        // if (_hasAnimator)
-        // {
-        //     _animationBlend = Mathf.Lerp(_animationBlend, horizontalVelocity.magnitude, dt * speedChangeRate);
-        //     if (_animationBlend < 0.01f) _animationBlend = 0f;
-
-        //     _animator.SetFloat(_animIDSpeed, _animationBlend);
-        //     _animator.SetFloat(_animIDMotionSpeed, 1f);
-
-            
-        // }
         if (_hasAnimator)
         {
-        //     // 初始化/切換武器姿勢 (確保 Agent 拿著正確武器的 Idle 動畫)
-        //     if (_agent.currentWeapon != _agent.defaultWeapon)
-        //     {
-        //         _agent.currentWeapon = _agent.defaultWeapon;
-        //         _animator.SetTrigger(_agent.currentWeapon.ToString());
-        //     }
-
             float speed = horizontalVelocity.magnitude;
-            // SoldierMovement targetMovement = SoldierMovement.NoMovement;
-
-            // 如果正在原地轉向、發呆，或是處於攻擊階段，強制鎖定為 NoMovement 狀態
-            // if (_agent.isTurningInPlace || _agent.isWaiting || _agent.brain.currentDecision == AgentDecision.ATTACK)
-            // {
-            //     targetMovement = SoldierMovement.NoMovement;
-            // }
-            // else if (speed > 0.1f)
-            // {
-            //     if (speed > _agent.defaultSpeed + 0.5f) targetMovement = SoldierMovement.Run;
-            //     else targetMovement = SoldierMovement.Walk;
-            // }
-
-            // // 防呆：只在狀態改變時發送 Trigger，避免每幀覆蓋導致動畫卡死！
-            // if (targetMovement != _agent.currentMovement)
-            // {
-            //     _animator.SetTrigger(targetMovement.ToString());
-            //     _agent.currentMovement = targetMovement;
-            // }
 
             // 保留原本的 BlendTree 更新 (如果你有使用混合樹的話)
             _animationBlend = Mathf.Lerp(_animationBlend, speed, dt * speedChangeRate);
