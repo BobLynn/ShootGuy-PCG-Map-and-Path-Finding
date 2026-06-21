@@ -157,6 +157,9 @@ public class AgentNavigator : MonoBehaviour
     // 將畫路徑的工作也移交給 Navigator
     void OnDrawGizmos()
     {
+        if (!ShouldShowDebugGizmos())
+            return;
+
         if (currentPath != null && currentPath.Length > 0)
         {
             Gizmos.color = Color.green;
@@ -171,5 +174,13 @@ public class AgentNavigator : MonoBehaviour
                 Gizmos.DrawWireSphere(currentPath[currentWaypointIndex], 0.5f);
             }
         }
+    }
+
+    private bool ShouldShowDebugGizmos()
+    {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        return agent == null || agent.showDebugGizmos;
     }
 }

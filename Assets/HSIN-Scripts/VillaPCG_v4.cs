@@ -35,6 +35,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     [Header("Area Layers")]
     public string casualAreaLayerName = "CasualArea";
     public string restrictedAreaLayerName = "RestrictedArea";
+    public string targetRoomLayerName = "TargetRoom";
     public float areaLayerMarkerHeight = 0.08f;
 
     [Header("Navigation Rebuild")]
@@ -97,6 +98,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         return ResolveLayer(areaLayerName, walkableLayerName);
     }
 
+    int GetTargetRoomLayerSafe()
+    {
+        return ResolveLayer(targetRoomLayerName, restrictedAreaLayerName, casualAreaLayerName, walkableLayerName);
+    }
+
     [Header("Generation Mode")]
     public bool generateOnPlay = false;
 
@@ -156,17 +162,17 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public int maxStandEnemyCount = 6;
     [Header("Enemy Count By Level")]
     [Range(0, 16)]
-    public int level1PatrolEnemyCount = 1;
+    public int level1PatrolEnemyCount = 3;
     [Range(0, 16)]
-    public int level1StandEnemyCount = 2;
+    public int level1StandEnemyCount = 4;
     [Range(0, 16)]
-    public int level2PatrolEnemyCount = 2;
+    public int level2PatrolEnemyCount = 7;
     [Range(0, 16)]
-    public int level2StandEnemyCount = 3;
-    [Range(0, 16)]
-    public int level3PatrolEnemyCount = 8;
-    [Range(0, 16)]
-    public int level3StandEnemyCount = 10;
+    public int level2StandEnemyCount = 8;
+    [Range(0, 32)]
+    public int level3PatrolEnemyCount = 12;
+    [Range(0, 32)]
+    public int level3StandEnemyCount = 13;
     [Header("Patrol Behavior Variants")]
     [Range(0, 8)]
     public int roomPairPatrolEnemyCount = 2;
@@ -222,10 +228,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     enum SecurityLevel
     {
-        Public,
-        SemiRestricted,
+        Casual,
         Restricted,
-        Critical
     }
 
     public enum LayoutZone
@@ -238,11 +242,9 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     {
         switch (security)
         {
-            case SecurityLevel.Public:
+            case SecurityLevel.Casual:
                 return LayoutZone.Casual;
-            case SecurityLevel.SemiRestricted:
             case SecurityLevel.Restricted:
-            case SecurityLevel.Critical:
                 return LayoutZone.Restricted;
             default:
                 return LayoutZone.Casual;
@@ -342,6 +344,18 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             this.gh = gh;
             this.security = security;
             this.layoutZone = VillaPCG_v4.GetLayoutZoneForSecurity(security);
+        }
+
+        public void SetSecurity(SecurityLevel security)
+        {
+            this.security = security;
+            this.layoutZone = VillaPCG_v4.GetLayoutZoneForSecurity(security);
+
+            if (room != null)
+            {
+                room.security = security;
+                room.layoutZone = this.layoutZone;
+            }
         }
 
         public int Left => gx;
@@ -695,11 +709,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         float generatorX = GetAdjacentCenter(0.0f, maintenanceSize.x, generatorSize.x, -1.0f);
         float supplyX = GetAdjacentCenter(0.0f, maintenanceSize.x, supplySize.x, 1.0f);
 
-        Room stagingAlley = AddRoom("L1 Staging Alley", new Vector2(0, stagingY), stagingSize, SecurityLevel.Public);
-        Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, streetY), streetSize, SecurityLevel.Public);
+        Room stagingAlley = AddRoom("L1 Staging Alley", new Vector2(0, stagingY), stagingSize, SecurityLevel.Casual);
+        Room streetGate = AddRoom("L1 Street Gate", new Vector2(0, streetY), streetSize, SecurityLevel.Casual);
         Room maintenanceHall = AddRoom("L1 Maintenance Hall", new Vector2(0, maintenanceY), maintenanceSize, SecurityLevel.Restricted);
         Room generatorRoom = AddRoom("L1 Generator Room", new Vector2(generatorX, maintenanceY), generatorSize, SecurityLevel.Restricted);
-        Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(supplyX, maintenanceY), supplySize, SecurityLevel.Public);
+        Room supplyRoom = AddRoom("L1 Supply Room", new Vector2(supplyX, maintenanceY), supplySize, SecurityLevel.Casual);
         Room exitRoom = AddRoom("L1 Exit Room", new Vector2(0, exitY), exitSize, SecurityLevel.Restricted);
 
         ConnectRooms(stagingAlley, streetGate, Side.North, Side.South);
@@ -731,13 +745,13 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         float workshopX = GetAdjacentCenter(0.0f, loadingSize.x, workshopSize.x, 1.0f);
         float guardX = GetAdjacentCenter(0.0f, checkpointSize.x, guardSize.x, -1.0f);
 
-        Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, serviceY), serviceSize, SecurityLevel.Public);
+        Room serviceEntrance = AddRoom("L2 Service Entrance", new Vector2(0, serviceY), serviceSize, SecurityLevel.Casual);
         Room loadingBay = AddRoom("L2 Loading Bay", new Vector2(0, loadingY), loadingSize, SecurityLevel.Restricted);
         Room recordsRoom = AddRoom("L2 Records Room", new Vector2(recordsX, loadingY), recordsSize, SecurityLevel.Restricted);
         Room workshop = AddRoom("L2 Workshop", new Vector2(workshopX, loadingY), workshopSize, SecurityLevel.Restricted);
         Room securityCheckpoint = AddRoom("L2 Security Checkpoint", new Vector2(0, checkpointY), checkpointSize, SecurityLevel.Restricted);
         Room guardLounge = AddRoom("L2 Guard Lounge", new Vector2(guardX, checkpointY), guardSize, SecurityLevel.Restricted);
-        Room exitRoom = AddRoom("L2 Executive Lift Exit", new Vector2(0, exitY), exitSize, SecurityLevel.Restricted);
+        Room exitRoom = AddRoom("L2 Exit Room", new Vector2(0, exitY), exitSize, SecurityLevel.Restricted);
 
         ConnectRooms(serviceEntrance, loadingBay, Side.North, Side.South);
         ConnectRooms(loadingBay, securityCheckpoint, Side.North, Side.South);
@@ -794,7 +808,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             gridRows / 2 - coreH / 2 + 1,
             coreW,
             coreH,
-            SecurityLevel.Public
+            SecurityLevel.Casual
         );
 
         gridRooms.Add(core);
@@ -870,7 +884,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         Vector2 spawnSize = GetSeededRoomSize(8.0f, 5.0f, 0.12f);
         Vector2 spawnCenter = new Vector2(0.0f, -18.0f);
-        Room spawnRoom = AddRoom("Courtyard / Entrance", spawnCenter, spawnSize, SecurityLevel.Public);
+        Room spawnRoom = AddRoom("Courtyard / Entrance", spawnCenter, spawnSize, SecurityLevel.Casual);
         spineRooms.Add(spawnRoom);
         spineCenters.Add(spawnCenter);
         spineSizes.Add(spawnSize);
@@ -895,7 +909,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
         Vector2 targetSize = GetSeededRoomSize(8.5f, 5.5f, 0.10f);
         currentY = GetAdjacentCenter(currentY, previousSize.y, targetSize.y, 1.0f);
-        Room targetRoom = AddRoom("Target Room", new Vector2(0.0f, currentY), targetSize, SecurityLevel.Critical);
+        Room targetRoom = AddRoom("Target Room", new Vector2(0.0f, currentY), targetSize, SecurityLevel.Restricted);
         spineRooms.Add(targetRoom);
         spineCenters.Add(new Vector2(0.0f, currentY));
         spineSizes.Add(targetSize);
@@ -1005,7 +1019,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     SecurityLevel GetLinearFinalSpineSecurity(int index, int spineRoomCount)
     {
         if (index <= 1)
-            return Random.value < 0.45f ? SecurityLevel.Public : SecurityLevel.Restricted;
+            return Random.value < 0.45f ? SecurityLevel.Casual : SecurityLevel.Restricted;
 
         return SecurityLevel.Restricted;
     }
@@ -1013,7 +1027,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     SecurityLevel GetLinearFinalSideRoomSecurity(int spineIndex, int spineRoomCount)
     {
         if (spineIndex <= 2 && Random.value < 0.25f)
-            return SecurityLevel.Public;
+            return SecurityLevel.Casual;
 
         return SecurityLevel.Restricted;
     }
@@ -1084,20 +1098,16 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     {
         float roll = Random.value;
 
-        if (parent.security == SecurityLevel.Restricted || parent.security == SecurityLevel.Critical)
-        {
-            if (roll < 0.85f) return SecurityLevel.Restricted;
-            return SecurityLevel.Critical;
-        }
+        if (parent.security == SecurityLevel.Restricted)
+            return SecurityLevel.Restricted;
 
-        if (roll < 0.32f) return SecurityLevel.Public;
-        if (roll < 0.94f) return SecurityLevel.Restricted;
-        return SecurityLevel.Critical;
+        if (roll < 0.32f) return SecurityLevel.Casual;
+        return SecurityLevel.Restricted;
     }
 
     Vector2Int GetRandomFinalVillaRoomSize(SecurityLevel security)
     {
-        float sizeBias = security == SecurityLevel.Public ? 1.2f : 0.86f;
+        float sizeBias = security == SecurityLevel.Casual ? 1.2f : 0.86f;
         int width = Mathf.Clamp(Mathf.RoundToInt(Random.Range(2.0f, 6.6f) * sizeBias), 2, 8);
         int height = Mathf.Clamp(Mathf.RoundToInt(Random.Range(2.0f, 5.8f) * sizeBias), 2, 7);
         return new Vector2Int(width, height);
@@ -1105,13 +1115,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     string GetFinalVillaRoomName(int index, SecurityLevel security)
     {
-        string[] publicNames = { "Tea Room", "Gallery", "Dining Hall", "Conservatory", "Veranda", "Pool Lounge" };
+        string[] casualNames = { "Tea Room", "Gallery", "Dining Hall", "Conservatory", "Veranda", "Pool Lounge" };
         string[] restrictedNames = { "Library", "Private Study", "Guest Suite", "Staff Room", "Storage", "Observatory" };
-        string[] criticalNames = { "Vault", "Security Office", "Master Suite", "Server Room", "Armory" };
 
-        string[] names = publicNames;
+        string[] names = casualNames;
         if (security == SecurityLevel.Restricted) names = restrictedNames;
-        else if (security == SecurityLevel.Critical) names = criticalNames;
 
         return names[Random.Range(0, names.Length)] + " " + index.ToString("00");
     }
@@ -1235,14 +1243,14 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         }
 
         spawn.name = "Courtyard / Entrance";
-        spawn.security = SecurityLevel.Public;
+        spawn.SetSecurity(SecurityLevel.Casual);
         target.name = "Target Room";
-        target.security = SecurityLevel.Critical;
+        target.SetSecurity(SecurityLevel.Restricted);
 
         if (safe != null)
         {
             safe.name = "Safe Room / Exit";
-            safe.security = SecurityLevel.Restricted;
+            safe.SetSecurity(SecurityLevel.Restricted);
         }
     }
 
@@ -1406,10 +1414,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     void UpdateMapRuleSummary()
     {
-        int publicCount = CountRoomsBySecurity(SecurityLevel.Public);
-        int semiRestrictedCount = CountRoomsBySecurity(SecurityLevel.SemiRestricted);
+        int casualCount = CountRoomsBySecurity(SecurityLevel.Casual);
         int restrictedCount = CountRoomsBySecurity(SecurityLevel.Restricted);
-        int criticalCount = CountRoomsBySecurity(SecurityLevel.Critical);
         int casualZoneCount = CountRoomsByLayoutZone(LayoutZone.Casual);
         int restrictedZoneCount = CountRoomsByLayoutZone(LayoutZone.Restricted);
 
@@ -1423,7 +1429,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         StringBuilder summary = new StringBuilder();
         summary.AppendLine($"Level {currentLevel} map PCG rules: seed={seed}, style={finalVillaStyle}, complexity={finalVillaComplexity}");
         summary.AppendLine($"rooms={rooms.Count}, connections={connections.Count}, roomGraphNodes={roomGraph.Count}");
-        summary.AppendLine($"security: public={publicCount}, semiRestricted={semiRestrictedCount}, restricted={restrictedCount}, critical={criticalCount}");
+        summary.AppendLine($"security: casual={casualCount}, restricted={restrictedCount}");
         summary.AppendLine($"layoutZones: casual={casualZoneCount}, restricted={restrictedZoneCount}");
         summary.AppendLine($"flow: spawn={GetSafeRuleName(playerSpawnRoomName)}, primaryGoal={GetSafeRuleName(primaryGoalRoomName)}, secondaryGoal={GetSafeRuleName(secondaryGoalRoomName)}");
         summary.AppendLine($"objectives: levelExit={GetSafeRuleName(levelExitRoom != null ? levelExitRoom.name : null)}, finalTarget={GetSafeRuleName(finalTargetRoom != null ? finalTargetRoom.name : null)}");
@@ -1522,12 +1528,18 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         Renderer renderer = floor.GetComponent<Renderer>();
         renderer.material = IsRestricted(r) ? restrictedFloorMat : floorMat;
 
-        CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(r.layoutZone) + "_" + r.name, floor.transform.position, floor.transform.localScale, r.layoutZone, transform);
+        if (r == finalTargetRoom)
+        {
+            CreateLayoutZoneMarker("Area_TargetRoom_" + r.name, floor.transform.position, floor.transform.localScale, GetTargetRoomLayerSafe(), transform);
+            return;
+        }
+
+        CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(r.layoutZone) + "_" + r.name, floor.transform.position, floor.transform.localScale, GetAreaLayerSafe(r.layoutZone), transform);
     }
 
     bool IsRestricted(Room r)
     {
-        return r.security == SecurityLevel.Restricted || r.security == SecurityLevel.Critical;
+        return r.security == SecurityLevel.Restricted;
     }
 
     LayoutZone GetConnectionLayoutZone(Room a, Room b)
@@ -1543,10 +1555,10 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         return layoutZone == LayoutZone.Restricted ? "Restricted" : "Casual";
     }
 
-    void CreateLayoutZoneMarker(string markerName, Vector3 floorCenter, Vector3 floorSize, LayoutZone layoutZone, Transform parent)
+    void CreateLayoutZoneMarker(string markerName, Vector3 floorCenter, Vector3 floorSize, int layer, Transform parent)
     {
         GameObject marker = new GameObject(markerName);
-        marker.layer = GetAreaLayerSafe(layoutZone);
+        marker.layer = layer;
         marker.transform.parent = parent;
 
         float markerHeight = Mathf.Max(0.01f, areaLayerMarkerHeight);
@@ -1763,7 +1775,10 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         labelObj.transform.position = new Vector3(r.center.x, 0.05f, r.center.y);
 
         TextMesh text = labelObj.AddComponent<TextMesh>();
-        text.text = r.name + "\n" + GetLayoutZoneLabel(r.layoutZone) + "\n" + r.security.ToString();
+        text.text = r == finalTargetRoom
+            ? r.name + "\nTarget"
+            : r.name + "\n" + r.security.ToString();
+            // GetLayoutZoneLabel(r.layoutZone) + "\n" + 
         text.characterSize = 0.45f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
@@ -2166,12 +2181,8 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     {
         switch (security)
         {
-            case SecurityLevel.Critical:
-                return 3;
             case SecurityLevel.Restricted:
                 return 2;
-            case SecurityLevel.SemiRestricted:
-                return 1;
             default:
                 return 0;
         }
@@ -2791,7 +2802,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         label.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
 
         TextMesh text = label.AddComponent<TextMesh>();
-        text.text = $"LEVEL EXIT\nPRESS {levelAdvanceKey}";
+        // text.text = $"LEVEL EXIT\nPRESS {levelAdvanceKey}";
         text.characterSize = 0.35f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
@@ -3047,7 +3058,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
                 renderer.material = floorMat;
 
                 LayoutZone connectorZone = GetConnectionLayoutZone(a, b);
-                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, connectorZone, root.transform);
+                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, GetAreaLayerSafe(connectorZone), root.transform);
             }
             else
             {
@@ -3086,7 +3097,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
                 renderer.material = floorMat;
 
                 LayoutZone connectorZone = GetConnectionLayoutZone(a, b);
-                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, connectorZone, root.transform);
+                CreateLayoutZoneMarker("Area_" + GetLayoutZoneNameToken(connectorZone) + "_" + floor.name, floor.transform.position, floor.transform.localScale, GetAreaLayerSafe(connectorZone), root.transform);
             }
         }
     }

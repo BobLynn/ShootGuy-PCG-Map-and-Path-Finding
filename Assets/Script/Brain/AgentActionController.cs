@@ -831,6 +831,9 @@ public class AgentActionController : MonoBehaviour
 
     private void OnDrawGizmos()
     {
+        if (!ShouldShowDebugGizmos())
+            return;
+
         if (Application.isPlaying && agent != null && agent.brain != null)
         {
             if (agent.brain.currentDecision == AgentDecision.INVESTIGATE)
@@ -846,5 +849,13 @@ public class AgentActionController : MonoBehaviour
                 Gizmos.color = Color.cyan; Gizmos.DrawWireSphere(currentDodgePoint, 0.6f); Gizmos.DrawLine(transform.position, currentDodgePoint);
             }
         }
+    }
+
+    private bool ShouldShowDebugGizmos()
+    {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        return agent == null || agent.showDebugGizmos;
     }
 }

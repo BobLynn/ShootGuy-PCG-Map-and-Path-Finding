@@ -53,12 +53,24 @@ public class StimulusManager : MonoBehaviour
         OnAudioStimulusCreated?.Invoke(stimulus);
 
         // Debug 視覺化：畫出聲音的傳播範圍 (黃色代表原點，綠色代表修正後的實際廣播點)
+        if (!ShouldDrawStimulusDebug(source))
+            return;
+
         Debug.DrawRay(pos, Vector3.up * radius, Color.yellow, 1.0f);
         if (pos != validPosition)
         {
             Debug.DrawLine(pos, validPosition, Color.red, 1.0f); // 畫出退後的軌跡
             Debug.DrawRay(validPosition, Vector3.up * (radius * 0.5f), Color.green, 1.0f);
         }
+    }
+
+    private bool ShouldDrawStimulusDebug(GameObject source)
+    {
+        if (source == null)
+            return true;
+
+        Agent sourceAgent = source.GetComponent<Agent>();
+        return sourceAgent == null || sourceAgent.showDebugGizmos;
     }
 
     /// <summary>

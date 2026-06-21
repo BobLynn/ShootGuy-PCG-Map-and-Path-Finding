@@ -190,8 +190,8 @@ public class VillaPCG_v4ControlPanelEditor : Editor
         int level1StandEnemyCount = EditorGUILayout.IntSlider("Level 1 Stand", pcg.level1StandEnemyCount, 0, 16);
         int level2PatrolEnemyCount = EditorGUILayout.IntSlider("Level 2 Patrol", pcg.level2PatrolEnemyCount, 0, 16);
         int level2StandEnemyCount = EditorGUILayout.IntSlider("Level 2 Stand", pcg.level2StandEnemyCount, 0, 16);
-        int level3PatrolEnemyCount = EditorGUILayout.IntSlider("Level 3 Patrol", pcg.level3PatrolEnemyCount, 0, 16);
-        int level3StandEnemyCount = EditorGUILayout.IntSlider("Level 3 Stand", pcg.level3StandEnemyCount, 0, 16);
+        int level3PatrolEnemyCount = EditorGUILayout.IntSlider("Level 3 Patrol", pcg.level3PatrolEnemyCount, 0, 32);
+        int level3StandEnemyCount = EditorGUILayout.IntSlider("Level 3 Stand", pcg.level3StandEnemyCount, 0, 32);
 
         EditorGUILayout.Space(6);
         EditorGUILayout.LabelField("Patrol Behavior Variants", EditorStyles.boldLabel);

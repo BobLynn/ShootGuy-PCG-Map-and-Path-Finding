@@ -110,6 +110,9 @@ public class SensorySystem : MonoBehaviour
     // ==========================================
     private void OnDrawGizmos()
     {
+        if (!ShouldShowDebugGizmos())
+            return;
+
         Gizmos.color = Color.white;
         Gizmos.DrawWireSphere(transform.position, viewRadius);
 
@@ -132,5 +135,13 @@ public class SensorySystem : MonoBehaviour
     {
         angleInDegrees += eulerY;
         return new Vector3(Mathf.Sin(angleInDegrees * Mathf.Deg2Rad), 0, Mathf.Cos(angleInDegrees * Mathf.Deg2Rad));
+    }
+
+    private bool ShouldShowDebugGizmos()
+    {
+        if (agent == null)
+            agent = GetComponent<Agent>();
+
+        return agent == null || agent.showDebugGizmos;
     }
 }
