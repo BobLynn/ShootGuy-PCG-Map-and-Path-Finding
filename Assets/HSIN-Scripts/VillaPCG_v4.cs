@@ -156,6 +156,12 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     [Header("Enemy Auto Layout")]
     public bool generateEnemyAgents = true;
     public GameObject enemyAgentPrefab;
+    [Header("Final Target Agent")]
+    public bool generateFinalTargetAgent = true;
+    public GameObject targetAgentPrefab;
+    public bool generateTargetEscort = true;
+    public GameObject targetEscortAgentPrefab;
+    public float targetEscortOffset = 2.4f;
     [HideInInspector]
     public int maxPatrolEnemyCount = 4;
     [HideInInspector]
@@ -2811,6 +2817,13 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     void CreateFinalTargetObject(Room targetRoom)
     {
+        GameObject targetPrefab = GetTargetAgentPrefab();
+        if (generateFinalTargetAgent && targetPrefab != null)
+        {
+            CreateFinalTargetAgent(targetRoom, targetPrefab);
+            return;
+        }
+
         GameObject target = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         target.name = "Final_Assassination_Target";
         target.transform.parent = transform;
@@ -2825,11 +2838,163 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
         label.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
 
         TextMesh text = label.AddComponent<TextMesh>();
-        text.text = "FINAL TARGET";
+        // text.text = "FINAL TARGET";
         text.characterSize = 0.45f;
         text.anchor = TextAnchor.MiddleCenter;
         text.alignment = TextAlignment.Center;
         text.color = Color.red;
+    }
+
+    void CreateFinalTargetAgent(Room targetRoom, GameObject targetPrefab)
+    {
+        GameObject root = new GameObject("Generated_FinalTargetAgent");
+        root.transform.parent = transform;
+
+        GameObject escapePoint = new GameObject("TargetEscapePoint_PlayerDeployment");
+        escapePoint.transform.parent = root.transform;
+        escapePoint.transform.position = currentSpawnTransform != null
+            ? currentSpawnTransform.position
+            : new Vector3(0f, enemySpawnHeight, -12f);
+
+        Vector3 targetPosition = new Vector3(targetRoom.center.x, enemySpawnHeight, targetRoom.center.y);
+        targetPosition = ClampPointInsideRoom(targetPosition, targetRoom);
+        targetPosition.y = enemySpawnHeight;
+
+        Quaternion targetRotation = Quaternion.LookRotation(GetRoomFacingDirection(targetRoom, targetPosition), Vector3.up);
+        GameObject target = CreateEnemyInstance(targetPrefab, "TargetAgent_PCG", targetPosition, targetRotation, root.transform);
+
+        Agent escort = null;
+        if (generateTargetEscort)
+        {
+            GameObject escortPrefab = GetTargetEscortAgentPrefab();
+            if (escortPrefab != null)
+            {
+                Vector3 escortPosition = targetPosition - targetRotation * Vector3.forward * targetEscortOffset;
+                escortPosition = ClampPointInsideRoom(escortPosition, targetRoom);
+                escortPosition.y = enemySpawnHeight;
+
+                GameObject escortObject = CreateEnemyInstance(escortPrefab, "targetEscortEnemy_PCG_01", escortPosition, targetRotation, root.transform);
+                ConfigureTargetEscortAgent(escortObject);
+                escort = escortObject.GetComponent<Agent>();
+            }
+        }
+
+        ConfigureTargetAgent(target, escapePoint.transform, escort);
+
+        GameObject label = new GameObject("Label_TargetAgent_PCG");
+        label.transform.parent = root.transform;
+        label.transform.position = targetPosition + Vector3.up * 1.8f;
+        label.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+        TextMesh text = label.AddComponent<TextMesh>();
+        // text.text = "FINAL TARGET";
+        text.characterSize = 0.45f;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = Color.red;
+    }
+
+    void ConfigureTargetAgent(GameObject target, Transform escapePoint, Agent escort)
+    {
+        if (target == null)
+            return;
+
+        Agent agent = target.GetComponent<Agent>();
+        if (agent != null)
+        {
+            agent.Name = target.name;
+            agent.agentType = AgentType.TARGET;
+            agent.currentWeapon = KevinIglesias.SoldierWeapons.None;
+            agent.currentAction = KevinIglesias.SoldierAction.Nothing;
+            agent.defaultState = AgentState.NONE;
+            agent.currentState = AgentState.NONE;
+        }
+
+        AgentActionController actionController = target.GetComponent<AgentActionController>();
+        if (actionController != null)
+        {
+            actionController.runToSpecificEndpoint = true;
+            actionController.escapeEndpoint = escapePoint;
+        }
+
+        AgentBrain brain = target.GetComponent<AgentBrain>();
+        if (brain != null)
+        {
+            brain.actionController = actionController;
+            brain.defaultDecision = AgentDecision.LONGREST;
+            brain.currentDecision = AgentDecision.LONGREST;
+        }
+
+        AgentNavigator navigator = target.GetComponent<AgentNavigator>();
+        if (navigator != null)
+        {
+            navigator.gridMap = gridMap;
+            navigator.waypointGraph = waypointGraph;
+            navigator.useGridMap = false;
+            navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
+        }
+
+        TargetAgentController targetController = target.GetComponent<TargetAgentController>();
+        if (targetController == null)
+            targetController = target.AddComponent<TargetAgentController>();
+
+        targetController.revealTargetToPlayer = true;
+        targetController.ConfigureForFinalLevel(escapePoint, escort, gridMap, waypointGraph, 1 << GetUnwalkableLayerSafe());
+    }
+
+    void ConfigureTargetEscortAgent(GameObject escort)
+    {
+        if (escort == null)
+            return;
+
+        Agent agent = escort.GetComponent<Agent>();
+        if (agent != null)
+        {
+            agent.Name = escort.name;
+            agent.agentType = AgentType.GUARD;
+            agent.defaultState = AgentState.NONE;
+            agent.currentState = AgentState.NONE;
+        }
+
+        AgentBrain brain = escort.GetComponent<AgentBrain>();
+        AgentActionController actionController = escort.GetComponent<AgentActionController>();
+        if (brain != null)
+        {
+            brain.actionController = actionController;
+            brain.defaultDecision = AgentDecision.LONGREST;
+            brain.currentDecision = AgentDecision.LONGREST;
+        }
+
+        AgentNavigator navigator = escort.GetComponent<AgentNavigator>();
+        if (navigator != null)
+        {
+            navigator.gridMap = gridMap;
+            navigator.waypointGraph = waypointGraph;
+            navigator.useGridMap = false;
+            navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
+        }
+    }
+
+    GameObject GetTargetAgentPrefab()
+    {
+        if (targetAgentPrefab != null)
+            return targetAgentPrefab;
+
+    #if UNITY_EDITOR
+        targetAgentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Target_v1.prefab");
+        if (targetAgentPrefab != null)
+            EditorUtility.SetDirty(this);
+    #endif
+
+        return targetAgentPrefab;
+    }
+
+    GameObject GetTargetEscortAgentPrefab()
+    {
+        if (targetEscortAgentPrefab != null)
+            return targetEscortAgentPrefab;
+
+        return GetEnemyAgentPrefab();
     }
 
     void ApplyMaterial(GameObject go, Material mat)

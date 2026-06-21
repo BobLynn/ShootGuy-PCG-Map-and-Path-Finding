@@ -14809,6 +14809,11 @@ MonoBehaviour:
   finalVillaStyle: 1
   generateEnemyAgents: 1
   enemyAgentPrefab: {fileID: 2923476425529671473, guid: 10bf05ac1d107f5c686afd32e81e816b, type: 3}
+  generateFinalTargetAgent: 1
+  targetAgentPrefab: {fileID: 0}
+  generateTargetEscort: 1
+  targetEscortAgentPrefab: {fileID: 0}
+  targetEscortOffset: 2.4
   maxPatrolEnemyCount: 4
   maxStandEnemyCount: 6
   level1PatrolEnemyCount: 2
@@ -42382,19 +42387,19 @@ PrefabInstance:
       objectReference: {fileID: 2086099114}
     - target: {fileID: 7425811984744520187, guid: fcdd8d946db36406991294ecc0052e76, type: 3}
       propertyPath: field of view
-      value: 25
+      value: 40
       objectReference: {fileID: 0}
     - target: {fileID: 7425811984744520188, guid: fcdd8d946db36406991294ecc0052e76, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.20093012
+      value: 0.0009300709
       objectReference: {fileID: 0}
     - target: {fileID: 7425811984744520188, guid: fcdd8d946db36406991294ecc0052e76, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.62747
+      value: 0.37747002
       objectReference: {fileID: 0}
     - target: {fileID: 7425811984744520188, guid: fcdd8d946db36406991294ecc0052e76, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -2.1027088
+      value: -4.102709
       objectReference: {fileID: 0}
     - target: {fileID: 7861331144659046684, guid: fcdd8d946db36406991294ecc0052e76, type: 3}
       propertyPath: m_Name
