@@ -158,7 +158,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
     public GameObject enemyAgentPrefab;
     [Header("Final Target Agent")]
     public bool generateFinalTargetAgent = true;
-    public GameObject targetAgentPrefab;
     public bool generateTargetEscort = true;
     public GameObject targetEscortAgentPrefab;
     public float targetEscortOffset = 2.4f;
@@ -2817,7 +2816,7 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
 
     void CreateFinalTargetObject(Room targetRoom)
     {
-        GameObject targetPrefab = GetTargetAgentPrefab();
+        GameObject targetPrefab = GetEnemyAgentPrefab();
         if (generateFinalTargetAgent && targetPrefab != null)
         {
             CreateFinalTargetAgent(targetRoom, targetPrefab);
@@ -2934,12 +2933,11 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
         }
 
-        TargetAgentController targetController = target.GetComponent<TargetAgentController>();
-        if (targetController == null)
-            targetController = target.AddComponent<TargetAgentController>();
-
-        targetController.revealTargetToPlayer = true;
-        targetController.ConfigureForFinalLevel(escapePoint, escort, gridMap, waypointGraph, 1 << GetUnwalkableLayerSafe());
+        if (agent != null)
+        {
+            agent.revealTargetToPlayer = true;
+            agent.ConfigureAsFinalTarget(escapePoint, escort, gridMap, waypointGraph, 1 << GetUnwalkableLayerSafe());
+        }
     }
 
     void ConfigureTargetEscortAgent(GameObject escort)
@@ -2973,20 +2971,6 @@ public class VillaPCG_v4 : MonoBehaviour, ILevelNavigator
             navigator.useGridMap = false;
             navigator.ObstacleLayers = 1 << GetUnwalkableLayerSafe();
         }
-    }
-
-    GameObject GetTargetAgentPrefab()
-    {
-        if (targetAgentPrefab != null)
-            return targetAgentPrefab;
-
-    #if UNITY_EDITOR
-        targetAgentPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Target_v1.prefab");
-        if (targetAgentPrefab != null)
-            EditorUtility.SetDirty(this);
-    #endif
-
-        return targetAgentPrefab;
     }
 
     GameObject GetTargetEscortAgentPrefab()

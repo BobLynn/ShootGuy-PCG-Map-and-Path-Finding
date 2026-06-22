@@ -633,6 +633,23 @@ MonoBehaviour:
   turnTargetPos: {x: 0, y: 0, z: 0}
   isStrafing: 0
   strafeDirection: {x: 0, y: 0, z: 0}
+  escapePoint: {fileID: 0}
+  escortAgent: {fileID: 0}
+  targetEscapesWhenPlayerSpotted: 1
+  targetEscapeArriveRadius: 1.5
+  despawnEscortOnEscape: 1
+  forceEscortFollowDuringEscape: 1
+  revealTargetToPlayer: 0
+  revealColor: {r: 1, g: 0, b: 0, a: 1}
+  revealBoxSize: {x: 72, y: 112}
+  applyTargetPresentation: 1
+  targetTagName: Target
+  targetLayerName: target
+  targetVisualMaterial: {fileID: 2100000, guid: 4bdeaeb3ea2a4448990f0295e8d89152, type: 2}
+  targetVisualRendererNames:
+  - HumanF_BodyMesh
+  - Human_SoldierHelmet
+  disableWeaponsWhenTarget: 1
   animator: {fileID: 0}
 --- !u!114 &3388586163097769211
 MonoBehaviour:

@@ -231,22 +231,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9567966}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!4 &12935094 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-  m_PrefabInstance: {fileID: 1523511000}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &12935103 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3388586163097769211, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-  m_PrefabInstance: {fileID: 1523511000}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0e6ee8c7996d25de594fa0e9bdf1ce99, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::AgentActionController
 --- !u!1 &21088275
 GameObject:
   m_ObjectHideFlags: 0
@@ -12083,7 +12067,6 @@ MonoBehaviour:
   generateEnemyAgents: 1
   enemyAgentPrefab: {fileID: 2923476425529671473, guid: 10bf05ac1d107f5c686afd32e81e816b, type: 3}
   generateFinalTargetAgent: 1
-  targetAgentPrefab: {fileID: 2923476425529671473, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
   generateTargetEscort: 1
   targetEscortAgentPrefab: {fileID: 0}
   targetEscortOffset: 2.4
@@ -24650,7 +24633,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1684798310}
-  - {fileID: 12935094}
   - {fileID: 1004406256}
   - {fileID: 1349241151}
   m_Father: {fileID: 693919061}
@@ -27733,107 +27715,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1521585531}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!1001 &1523511000
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1318207009}
-    m_Modifications:
-    - target: {fileID: 10795382029361816, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: Name
-      value: TargetAgent_PCG
-      objectReference: {fileID: 0}
-    - target: {fileID: 10795382029361816, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: currentState
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 10795382029361816, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: defaultState
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 10795382029361816, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: showDebugGizmos
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 1488010420884697601, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: actionController
-      value: 
-      objectReference: {fileID: 12935103}
-    - target: {fileID: 2923476425529671473, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_Name
-      value: TargetAgent_PCG
-      objectReference: {fileID: 0}
-    - target: {fileID: 3388586163097769211, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: escapeEndpoint
-      value: 
-      objectReference: {fileID: 1684798310}
-    - target: {fileID: 5432703986975572530, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: gridMap
-      value: 
-      objectReference: {fileID: 752238015}
-    - target: {fileID: 5432703986975572530, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: waypointGraph
-      value: 
-      objectReference: {fileID: 752238016}
-    - target: {fileID: 5432703986975572530, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: ObstacleLayers.m_Bits
-      value: 64
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -10
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0.08
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 29
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5691054071389081995, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7762005826314804071, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: escapePoint
-      value: 
-      objectReference: {fileID: 1684798310}
-    - target: {fileID: 7762005826314804071, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
-      propertyPath: escortAgent
-      value: 
-      objectReference: {fileID: 1004406265}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 5e157d18671446a9bfdc34af5196186b, type: 3}
 --- !u!1 &1525584979
 GameObject:
   m_ObjectHideFlags: 0

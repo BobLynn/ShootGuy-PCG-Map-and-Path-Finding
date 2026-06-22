@@ -91,6 +91,25 @@ public class Agent : MonoBehaviour
     public bool isStrafing = false;
     public Vector3 strafeDirection = Vector3.zero;
 
+    [Header("Target Agent Rules")]
+    public Transform escapePoint;
+    public Agent escortAgent;
+    public bool targetEscapesWhenPlayerSpotted = true;
+    public float targetEscapeArriveRadius = 1.5f;
+    public bool despawnEscortOnEscape = true;
+    public bool forceEscortFollowDuringEscape = true;
+    public bool revealTargetToPlayer = false;
+    public Color revealColor = Color.red;
+    public Vector2 revealBoxSize = new Vector2(72f, 112f);
+
+    [Header("Target Agent Presentation")]
+    public bool applyTargetPresentation = true;
+    public string targetTagName = "Target";
+    public string targetLayerName = "target";
+    public Material targetVisualMaterial;
+    public string[] targetVisualRendererNames = { "HumanF_BodyMesh", "Human_SoldierHelmet" };
+    public bool disableWeaponsWhenTarget = true;
+
     public Vector3 velocity
     {
         get
@@ -112,6 +131,8 @@ public class Agent : MonoBehaviour
     private bool warnedMissingLocomotion = false;
     private bool warnedMissingAnimationRefs = false;
     private bool warnedMissingBrain = false;
+    private bool targetIsEscaping = false;
+    private bool targetHasEscaped = false;
 
     void OnEnable()
     {
@@ -124,6 +145,22 @@ public class Agent : MonoBehaviour
     void OnDisable()
     {
         activeAgents.Remove(this);
+    }
+
+    void OnValidate()
+    {
+        if (agentType != AgentType.TARGET)
+            return;
+
+        locomotion = GetComponent<AgentLocomotion>();
+        navigator = GetComponent<AgentNavigator>();
+        brain = GetComponent<AgentBrain>();
+        sensory = GetComponent<SensorySystem>();
+        soldierController = GetComponent<HumanSoldierController>();
+        animator = GetComponent<Animator>();
+
+        ApplyTargetAgentDefaults();
+        SyncTargetEscapeEndpoint();
     }
 
     void Start()
@@ -156,6 +193,12 @@ public class Agent : MonoBehaviour
         maxSpeed = defaultSpeed;
         currentState = defaultState;
 
+        if (agentType == AgentType.TARGET)
+        {
+            ApplyTargetAgentDefaults();
+            SyncTargetEscapeEndpoint();
+        }
+
         
     }
     public void AddState(AgentState state) => currentState |= state;
@@ -165,6 +208,8 @@ public class Agent : MonoBehaviour
 
     void Update()
     {
+        UpdateTargetAgentRules();
+
         if (!CanUpdateAnimationState())
             return;
 
@@ -293,6 +338,322 @@ public class Agent : MonoBehaviour
         LogDebug($"{name} has died and disabled!");
     }
 
+    public void ConfigureAsFinalTarget(Transform escape, Agent escort, GridMap3D gridMap, WaypointGraph3D waypointGraph, LayerMask obstacleLayers)
+    {
+        locomotion = locomotion != null ? locomotion : GetComponent<AgentLocomotion>();
+        navigator = navigator != null ? navigator : GetComponent<AgentNavigator>();
+        brain = brain != null ? brain : GetComponent<AgentBrain>();
+        sensory = sensory != null ? sensory : GetComponent<SensorySystem>();
+        soldierController = soldierController != null ? soldierController : GetComponent<HumanSoldierController>();
+        animator = animator != null ? animator : GetComponent<Animator>();
+
+        agentType = AgentType.TARGET;
+        escapePoint = escape;
+        escortAgent = escort;
+
+        ApplyTargetAgentDefaults();
+        SyncTargetEscapeEndpoint();
+        ConfigureNavigator(navigator, gridMap, waypointGraph, obstacleLayers);
+
+        if (escortAgent != null)
+        {
+            ConfigureNavigator(escortAgent.navigator != null ? escortAgent.navigator : escortAgent.GetComponent<AgentNavigator>(), gridMap, waypointGraph, obstacleLayers);
+        }
+    }
+
+    public void BeginTargetEscape(Transform threat)
+    {
+        if (agentType != AgentType.TARGET || targetHasEscaped || targetIsEscaping)
+            return;
+
+        if (escapePoint == null)
+        {
+            GameObject spawn = GameObject.Find("PlayerSpawn");
+            if (spawn != null)
+                escapePoint = spawn.transform;
+        }
+
+        SyncTargetEscapeEndpoint();
+
+        if (escapePoint == null)
+        {
+            Debug.LogWarning($"[Agent] {name} cannot start target escape because escapePoint is missing.");
+            return;
+        }
+
+        targetIsEscaping = true;
+        if (brain != null)
+        {
+            brain.ChangeDecision(AgentDecision.RUN, threat != null ? threat : escapePoint, default, 0);
+        }
+
+        UpdateTargetEscortFollow();
+    }
+
+    private void UpdateTargetAgentRules()
+    {
+        if (agentType != AgentType.TARGET || targetHasEscaped || health <= 0f)
+            return;
+
+        ApplyTargetAgentDefaults();
+
+        if (escapePoint == null)
+        {
+            GameObject spawn = GameObject.Find("PlayerSpawn");
+            if (spawn != null)
+            {
+                escapePoint = spawn.transform;
+                SyncTargetEscapeEndpoint();
+            }
+        }
+
+        if (targetEscapesWhenPlayerSpotted && !targetIsEscaping && ShouldStartTargetEscape())
+        {
+            BeginTargetEscape(FindPlayerTransform());
+        }
+
+        if (!targetIsEscaping)
+            return;
+
+        UpdateTargetEscortFollow();
+
+        if (HasTargetReachedEscapePoint())
+        {
+            CompleteTargetEscape();
+        }
+    }
+
+    private void ApplyTargetAgentDefaults()
+    {
+        currentWeapon = SoldierWeapons.None;
+        currentAction = SoldierAction.Nothing;
+        defaultState = AgentState.NONE;
+
+        if (brain != null && !targetIsEscaping)
+        {
+            brain.defaultDecision = AgentDecision.LONGREST;
+            brain.currentDecision = AgentDecision.LONGREST;
+        }
+
+        if (applyTargetPresentation)
+        {
+            ApplyTargetTagAndLayer();
+            ApplyTargetVisualMaterial();
+        }
+
+        if (disableWeaponsWhenTarget)
+        {
+            HideEquippedWeapons();
+        }
+    }
+
+    private void ApplyTargetTagAndLayer()
+    {
+        if (!string.IsNullOrEmpty(targetTagName))
+        {
+            try
+            {
+                gameObject.tag = targetTagName;
+            }
+            catch (UnityException)
+            {
+                Debug.LogWarning($"[Agent] Target tag '{targetTagName}' does not exist.");
+            }
+        }
+
+        int targetLayer = LayerMask.NameToLayer(targetLayerName);
+        if (targetLayer >= 0)
+        {
+            SetLayerRecursively(gameObject, targetLayer);
+        }
+        else if (!string.IsNullOrEmpty(targetLayerName))
+        {
+            Debug.LogWarning($"[Agent] Target layer '{targetLayerName}' does not exist.");
+        }
+    }
+
+    private void ApplyTargetVisualMaterial()
+    {
+        if (targetVisualMaterial == null || targetVisualRendererNames == null)
+            return;
+
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null)
+                continue;
+
+            for (int i = 0; i < targetVisualRendererNames.Length; i++)
+            {
+                if (renderer.name == targetVisualRendererNames[i])
+                {
+                    renderer.sharedMaterial = targetVisualMaterial;
+                    break;
+                }
+            }
+        }
+    }
+
+    private void HideEquippedWeapons()
+    {
+        if (soldierController == null)
+            soldierController = GetComponent<HumanSoldierController>();
+
+        if (soldierController == null)
+            return;
+
+        soldierController.equippedWeapon = SoldierWeapons.None;
+        soldierController.action = SoldierAction.Nothing;
+
+        if (soldierController.weapons == null)
+            return;
+
+        foreach (GameObject weapon in soldierController.weapons)
+        {
+            if (weapon != null)
+                weapon.SetActive(false);
+        }
+    }
+
+    private void SyncTargetEscapeEndpoint()
+    {
+        AgentActionController actionController = GetComponent<AgentActionController>();
+        if (actionController == null)
+            return;
+
+        actionController.runToSpecificEndpoint = true;
+        actionController.escapeEndpoint = escapePoint;
+    }
+
+    private bool ShouldStartTargetEscape()
+    {
+        if (playerfounded)
+            return true;
+
+        return sensory != null && sensory.canSeePlayer;
+    }
+
+    private Transform FindPlayerTransform()
+    {
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        return player != null ? player.transform : null;
+    }
+
+    private void UpdateTargetEscortFollow()
+    {
+        if (!forceEscortFollowDuringEscape || escortAgent == null || !escortAgent.gameObject.activeInHierarchy)
+            return;
+
+        AgentBrain escortBrain = escortAgent.brain != null ? escortAgent.brain : escortAgent.GetComponent<AgentBrain>();
+        if (escortBrain == null)
+            return;
+
+        escortAgent.agentType = AgentType.GUARD;
+        escortAgent.targetObject = transform;
+        escortBrain.ChangeDecision(AgentDecision.CHASE, transform, default, 1);
+    }
+
+    private bool HasTargetReachedEscapePoint()
+    {
+        if (escapePoint == null)
+            return false;
+
+        AgentActionController actionController = GetComponent<AgentActionController>();
+        if (actionController != null && actionController.HasSuccessfullyEscaped())
+            return true;
+
+        Vector3 flatPos = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 flatEscape = new Vector3(escapePoint.position.x, 0f, escapePoint.position.z);
+        return Vector3.Distance(flatPos, flatEscape) <= targetEscapeArriveRadius;
+    }
+
+    private void CompleteTargetEscape()
+    {
+        targetHasEscaped = true;
+        Debug.Log($"[Agent] {name} escaped. Mission failed.");
+
+        if (despawnEscortOnEscape && escortAgent != null)
+            escortAgent.gameObject.SetActive(false);
+
+        gameObject.SetActive(false);
+    }
+
+    private static void ConfigureNavigator(AgentNavigator agentNavigator, GridMap3D gridMap, WaypointGraph3D waypointGraph, LayerMask obstacleLayers)
+    {
+        if (agentNavigator == null)
+            return;
+
+        agentNavigator.gridMap = gridMap;
+        agentNavigator.waypointGraph = waypointGraph;
+        agentNavigator.useGridMap = false;
+        agentNavigator.ObstacleLayers = obstacleLayers;
+    }
+
+    private static void SetLayerRecursively(GameObject root, int layer)
+    {
+        root.layer = layer;
+        foreach (Transform child in root.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
+    }
+
+    void OnGUI()
+    {
+        if (agentType != AgentType.TARGET || !revealTargetToPlayer || !gameObject.activeInHierarchy)
+            return;
+
+        Camera camera = GetRevealCamera();
+        if (camera == null)
+            return;
+
+        Vector3 headScreen = camera.WorldToScreenPoint(transform.position + Vector3.up * 2.0f);
+        Vector3 bodyScreen = camera.WorldToScreenPoint(transform.position + Vector3.up * 0.9f);
+        if (headScreen.z <= 0f)
+            return;
+
+        float x = headScreen.x - revealBoxSize.x * 0.5f;
+        float y = Screen.height - headScreen.y;
+        float height = Mathf.Max(revealBoxSize.y, Mathf.Abs((Screen.height - bodyScreen.y) - y) + 48f);
+        Rect box = new Rect(x, y, revealBoxSize.x, height);
+
+        GUI.color = revealColor;
+        DrawScreenRectOutline(box, 2f);
+        GUI.Label(new Rect(box.x - 8f, box.y - 22f, box.width + 32f, 22f), "TARGET");
+
+        Transform player = FindPlayerTransform();
+        if (player != null)
+        {
+            float distance = Vector3.Distance(player.position, transform.position);
+            GUI.Label(new Rect(box.x - 8f, box.yMax + 2f, box.width + 48f, 22f), $"{distance:0}m");
+        }
+
+        GUI.color = Color.white;
+    }
+
+    private static Camera GetRevealCamera()
+    {
+        if (Camera.main != null)
+            return Camera.main;
+
+        Camera[] cameras = Camera.allCameras;
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            if (cameras[i] != null && cameras[i].isActiveAndEnabled)
+                return cameras[i];
+        }
+
+        return null;
+    }
+
+    private static void DrawScreenRectOutline(Rect rect, float thickness)
+    {
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, rect.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMax - thickness, rect.width, thickness), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMin, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(rect.xMax - thickness, rect.yMin, thickness, rect.height), Texture2D.whiteTexture);
+    }
+
     private bool CanUpdateAnimationState()
     {
         if (animator != null && soldierController != null)
@@ -315,8 +676,5 @@ public class Agent : MonoBehaviour
         Debug.Log($"[Agent] {message}");
     }
 }
-
-
-
 
 
